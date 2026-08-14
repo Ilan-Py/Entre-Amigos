@@ -762,59 +762,119 @@ async function generarInforme() {
       ? personas.find(p => p.id === Number(personaId))
       : null;
 
+  const titulo =
+    persona
+      ? `Informe de ${nombreCompleto(persona)}`
+      : `Informe de gastos · ${grupoNombre()}`;
+
+  const periodo =
+    `${desde ? fechaAR(desde) : "Inicio"} — ${hasta ? fechaAR(hasta) : "Actualidad"}`;
+
+  const filas = data.balances.map(b => {
+    let estado = "Al día";
+    let clase = "ok";
+
+    if (b.saldo > 0.01) {
+      estado = `Recibe ${moneda(b.saldo)}`;
+      clase = "receive";
+    } else if (b.saldo < -0.01) {
+      estado = `Paga ${moneda(-b.saldo)}`;
+      clase = "pay";
+    }
+
+    return `
+      <tr>
+        <td><b>${b.nombre}</b></td>
+        <td>${moneda(b.puso)}</td>
+        <td>${moneda(b.consumio)}</td>
+        <td>${moneda(b.transferido)}</td>
+        <td>${moneda(b.recibido)}</td>
+        <td><span class="report-status ${clase}">${estado}</span></td>
+      </tr>
+    `;
+  }).join("");
+
+  const deudas = data.deudas.length
+    ? `
+      <div class="report-debt-list">
+        ${data.deudas.map(d => `
+          <div class="report-debt-row">
+            <div>
+              <b>${d.deudor}</b>
+              <div class="muted">Debe transferir</div>
+            </div>
+            <div class="arrow">→</div>
+            <div class="receiver">
+              <b>${d.acreedor}</b>
+              <div class="muted">Debe recibir</div>
+            </div>
+            <div class="debt-amount">${moneda(d.monto)}</div>
+          </div>
+        `).join("")}
+      </div>
+    `
+    : `<p class="pending-positive">No hay deudas pendientes para este período.</p>`;
+
   $("contenidoInforme").innerHTML = `
-    <div class="report-summary">
-      <h3>
-        ${persona ? `Informe de ${nombreCompleto(persona)}` : `Informe del grupo ${grupoNombre()}`}
-      </h3>
+    <div class="report-header">
+      <div>
+        <h3>${titulo}</h3>
+        <div class="report-period">${periodo}</div>
+      </div>
 
-      <p class="muted">
-        Período: ${desde ? fechaAR(desde) : "inicio"} a ${hasta ? fechaAR(hasta) : "actualidad"}
-      </p>
-
-      <p>
-        Gasto total del período:
+      <div class="report-total-box">
+        <span>Gasto total del período</span>
         <b>${moneda(data.estadisticas.gasto_total)}</b>
-      </p>
+      </div>
     </div>
 
-    <h3>Saldos</h3>
+    <div class="report-quick">
+      <div class="report-quick-title">Situación del grupo</div>
+      <div class="report-quick-grid">
+        <div>
+          <span>Gasto del período</span>
+          <b>${moneda(data.estadisticas.gasto_total)}</b>
+        </div>
+        <div>
+          <span>Pendiente de transferir</span>
+          <b>${moneda(data.totalDeuda)}</b>
+        </div>
+        <div>
+          <span>Transferencias necesarias</span>
+          <b>${data.deudas.length}</b>
+        </div>
+      </div>
+    </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Persona</th>
-          <th>Aportó</th>
-          <th>Consumió</th>
-          <th>Transf. enviadas</th>
-          <th>Transf. recibidas</th>
-          <th>Saldo pendiente</th>
-        </tr>
-      </thead>
+    <div class="report-section report-settle-first">
+      <h3 class="report-section-title">Qué tiene que hacer cada uno</h3>
+      ${deudas}
+    </div>
 
-      <tbody>
-        ${data.balances.map(b => `
+    <div class="report-section">
+      <h3 class="report-section-title">Detalle de saldos</h3>
+      <table>
+        <thead>
           <tr>
-            <td>${b.nombre}</td>
-            <td>${moneda(b.puso)}</td>
-            <td>${moneda(b.consumio)}</td>
-            <td>${moneda(b.transferido)}</td>
-            <td>${moneda(b.recibido)}</td>
-            <td>${moneda(b.saldo)}</td>
+            <th>Persona</th>
+            <th>Aportó</th>
+            <th>Consumió</th>
+            <th>Transf. enviadas</th>
+            <th>Transf. recibidas</th>
+            <th>Estado actual</th>
           </tr>
-        `).join("")}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
 
-    <h3>Cómo saldar</h3>
-
-    ${
-      data.deudas.length
-        ? `<ul>${data.deudas.map(d =>
-            `<li>${d.deudor} debe transferir <b>${moneda(d.monto)}</b> a ${d.acreedor}</li>`
-          ).join("")}</ul>`
-        : `<p>No hay deudas pendientes en este período.</p>`
-    }
+    <div class="report-section">
+      <p class="muted">
+        Este informe contempla los gastos y las transferencias registradas
+        dentro del período seleccionado. Los importes pendientes reflejan
+        el saldo al momento de generar el informe.
+      </p>
+    </div>
   `;
 
   generarResumenCompartible();
@@ -836,72 +896,109 @@ function generarResumenCompartible() {
       ? personas.find(p => p.id === Number(personaId))
       : null;
 
+  const separador = "────────────────────────";
   let texto = "";
 
-  texto += `RESUMEN DE GASTOS - ${grupoNombre()}\n`;
-  texto += `Período: ${desde ? fechaAR(desde) : "inicio"} al ${hasta ? fechaAR(hasta) : "actualidad"}\n`;
+  texto += `*RESUMEN DE GASTOS · ${grupoNombre().toUpperCase()}*
+`;
+  texto += `${desde ? fechaAR(desde) : "Inicio"} al ${hasta ? fechaAR(hasta) : "Actualidad"}
+`;
 
   if (persona) {
-    texto += `Persona: ${nombreCompleto(persona)}\n`;
+    texto += `Persona: ${nombreCompleto(persona)}
+`;
   }
 
-  texto += `\n`;
+  texto += `${separador}
+
+`;
 
   if (!persona) {
-    texto += `GASTOS\n`;
+    texto += `*GASTOS DEL PERÍODO*
+`;
 
     if (!eventos.length) {
-      texto += `No hay gastos registrados en el período.\n`;
+      texto += `No hay gastos registrados.
+`;
     } else {
       eventos.forEach((e, index) => {
-        texto += `\n${index + 1}. ${e.descripcion} - ${fechaAR(e.fecha)}\n`;
-        texto += `Total: ${moneda(e.total)}\n`;
+        texto += `
+${index + 1}) *${e.descripcion}* · ${fechaAR(e.fecha)}
+`;
+        texto += `Total: ${moneda(e.total)}
+`;
 
-        texto += `Pagó:\n`;
+        texto += `Pagó:
+`;
         e.pagadores.forEach(p => {
-          texto += `- ${p.nombre}: ${moneda(p.monto)}\n`;
+          texto += `• ${p.nombre}: ${moneda(p.monto)}
+`;
         });
 
-        texto += `Participantes:\n`;
+        texto += `Correspondió:
+`;
         e.participantes.forEach(p => {
-          texto += `- ${p.nombre}: ${moneda(p.monto_asignado)}\n`;
+          texto += `• ${p.nombre}: ${moneda(p.monto_asignado)}
+`;
         });
       });
     }
+
+    texto += `
+${separador}
+`;
   }
 
-  texto += `\nSALDOS\n`;
+  texto += `
+*SALDOS ACTUALES*
+`;
 
   data.balances.forEach(b => {
     if (b.saldo > 0.01) {
-      texto += `- ${b.nombre}: debe recibir ${moneda(b.saldo)}\n`;
+      texto += `• ${b.nombre}: debe recibir *${moneda(b.saldo)}*
+`;
     } else if (b.saldo < -0.01) {
-      texto += `- ${b.nombre}: debe pagar ${moneda(-b.saldo)}\n`;
+      texto += `• ${b.nombre}: debe pagar *${moneda(-b.saldo)}*
+`;
     } else {
-      texto += `- ${b.nombre}: está al día\n`;
+      texto += `• ${b.nombre}: al día
+`;
     }
   });
 
-  texto += `\nCÓMO SALDAR\n`;
+  texto += `
+${separador}
+`;
+  texto += `
+*CÓMO SALDAR*
+`;
 
   if (!data.deudas.length) {
-    texto += `No hay transferencias pendientes.\n`;
+    texto += `No hay transferencias pendientes.
+`;
   } else {
     data.deudas.forEach((d, index) => {
-      const personaAcreedora = todasPersonas.find(p => p.id === d.acreedor_id);
+      const personaAcreedora =
+        todasPersonas.find(p => p.id === d.acreedor_id);
 
-      texto += `${index + 1}. ${d.deudor} → ${d.acreedor}: ${moneda(d.monto)}`;
+      texto += `${index + 1}. ${d.deudor} → ${d.acreedor}
+`;
+      texto += `   *${moneda(d.monto)}*`;
 
       if (personaAcreedora?.alias_bancario) {
-        texto += ` | Alias: ${personaAcreedora.alias_bancario}`;
+        texto += ` · Alias: ${personaAcreedora.alias_bancario}`;
       }
 
-      texto += `\n`;
+      texto += `
+`;
     });
   }
 
-  texto += `\nTotal pendiente a transferir: ${moneda(data.totalDeuda)}\n`;
-  texto += `\nEste resumen contempla las transferencias ya registradas y los saldos pendientes al cierre del período.`;
+  texto += `
+Total pendiente a transferir: *${moneda(data.totalDeuda)}*
+`;
+  texto += `
+Generado con Entre Amigos.`;
 
   $("resumenCompartible").value = texto;
 }
