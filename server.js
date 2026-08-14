@@ -54,6 +54,7 @@ app.get("/api/personas", async (req, res) => {
         FROM personas p
         JOIN grupo_persona gp ON gp.persona_id = p.id
         WHERE gp.grupo_id = ?
+          AND gp.activo = 1
         ORDER BY p.nombre, p.apellido
       `, [grupoId]);
       return res.json(rows);
@@ -78,44 +79,91 @@ app.post("/api/personas", async (req, res) => {
     apellido,
     telefono,
     alias_bancario,
-    grupo_id
+    grupo_id,
+    forzar_nuevo
   } = req.body;
 
   const n = String(nombre || "").trim();
+  const a = String(apellido || "").trim();
+  const t = String(telefono || "").trim();
+  const alias = String(alias_bancario || "").trim();
 
   if (!n)
     return res.status(400).json({ error: "Ingrese un nombre." });
 
-  const conn = await db.getConnection();
-
   try {
-    await conn.beginTransaction();
+    if (!forzar_nuevo) {
+      const condiciones = [];
+      const params = [];
 
-    const [r] = await conn.query(`
-      INSERT INTO personas(nombre, apellido, telefono, alias_bancario)
-      VALUES (?, ?, ?, ?)
-    `, [
-      n,
-      String(apellido || "").trim() || null,
-      String(telefono || "").trim() || null,
-      String(alias_bancario || "").trim() || null
-    ]);
+      // Nombre + apellido exactos (normalizados)
+      condiciones.push(`
+        LOWER(TRIM(nombre)) = LOWER(TRIM(?))
+        AND LOWER(TRIM(COALESCE(apellido,''))) = LOWER(TRIM(?))
+      `);
+      params.push(n, a);
 
-    if (grupo_id) {
-      await conn.query(`
-        INSERT INTO grupo_persona(grupo_id, persona_id)
-        VALUES (?, ?)
-      `, [grupo_id, r.insertId]);
+      if (t) {
+        condiciones.push("TRIM(COALESCE(telefono,'')) = TRIM(?)");
+        params.push(t);
+      }
+
+      if (alias) {
+        condiciones.push("LOWER(TRIM(COALESCE(alias_bancario,''))) = LOWER(TRIM(?))");
+        params.push(alias);
+      }
+
+      const [coincidencias] = await db.query(`
+        SELECT *
+        FROM personas
+        WHERE ${condiciones.map(c => `(${c})`).join(" OR ")}
+        ORDER BY id
+        LIMIT 1
+      `, params);
+
+      if (coincidencias.length) {
+        return res.status(409).json({
+          error: "Ya existe una persona que parece coincidir con estos datos.",
+          existente: coincidencias[0]
+        });
+      }
     }
 
-    await conn.commit();
-    res.status(201).json({ id: r.insertId });
+    const conn = await db.getConnection();
+
+    try {
+      await conn.beginTransaction();
+
+      const [r] = await conn.query(`
+        INSERT INTO personas(nombre, apellido, telefono, alias_bancario)
+        VALUES (?, ?, ?, ?)
+      `, [
+        n,
+        a || null,
+        t || null,
+        alias || null
+      ]);
+
+      if (grupo_id) {
+        await conn.query(`
+          INSERT INTO grupo_persona(grupo_id, persona_id, activo)
+          VALUES (?, ?, 1)
+          ON DUPLICATE KEY UPDATE activo = 1
+        `, [grupo_id, r.insertId]);
+      }
+
+      await conn.commit();
+      res.status(201).json({ id: r.insertId });
+
+    } catch (e) {
+      await conn.rollback();
+      res.status(500).json({ error: e.message });
+    } finally {
+      conn.release();
+    }
 
   } catch (e) {
-    await conn.rollback();
     res.status(500).json({ error: e.message });
-  } finally {
-    conn.release();
   }
 });
 
@@ -160,8 +208,9 @@ app.put("/api/personas/:id", async (req, res) => {
 app.post("/api/grupos/:grupoId/personas/:personaId", async (req, res) => {
   try {
     await db.query(`
-      INSERT IGNORE INTO grupo_persona(grupo_id, persona_id)
-      VALUES (?, ?)
+      INSERT INTO grupo_persona(grupo_id, persona_id, activo)
+      VALUES (?, ?, 1)
+      ON DUPLICATE KEY UPDATE activo = 1
     `, [req.params.grupoId, req.params.personaId]);
 
     res.json({ ok: true });
@@ -173,27 +222,90 @@ app.post("/api/grupos/:grupoId/personas/:personaId", async (req, res) => {
 
 app.delete("/api/grupos/:grupoId/personas/:personaId", async (req, res) => {
   try {
-    const [[uso]] = await db.query(`
-      SELECT COUNT(*) AS c
-      FROM participantes pr
-      JOIN eventos e ON e.id = pr.evento_id
-      WHERE e.grupo_id = ?
-        AND pr.persona_id = ?
-    `, [req.params.grupoId, req.params.personaId]);
+    const grupoId = Number(req.params.grupoId);
+    const personaId = Number(req.params.personaId);
 
-    if (uso.c > 0) {
+    const balances = await obtenerBalances({ grupoId });
+    const persona = balances.find(p => p.id === personaId);
+
+    if (persona && Math.abs(persona.saldoCentavos) > 0) {
       return res.status(400).json({
-        error: "La persona ya tiene movimientos en este grupo y no puede quitarse."
+        error:
+          `No se puede ocultar a ${persona.nombre} porque todavía tiene un saldo pendiente ` +
+          `de ${Math.abs(persona.saldo).toFixed(2)}. Primero hay que saldarlo.`
       });
     }
 
     await db.query(`
-      DELETE FROM grupo_persona
+      UPDATE grupo_persona
+      SET activo = 0
       WHERE grupo_id = ?
         AND persona_id = ?
-    `, [req.params.grupoId, req.params.personaId]);
+    `, [grupoId, personaId]);
 
     res.json({ ok: true });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+app.get("/api/directorio-personas", async (_, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        p.id,
+        p.nombre,
+        p.apellido,
+        p.telefono,
+        p.alias_bancario,
+        GROUP_CONCAT(
+          DISTINCT CASE WHEN gp.activo = 1 THEN g.nombre END
+          ORDER BY g.nombre SEPARATOR ', '
+        ) AS grupos_activos,
+        GROUP_CONCAT(
+          DISTINCT CASE WHEN gp.activo = 0 THEN g.nombre END
+          ORDER BY g.nombre SEPARATOR ', '
+        ) AS grupos_ocultos
+      FROM personas p
+      LEFT JOIN grupo_persona gp ON gp.persona_id = p.id
+      LEFT JOIN grupos g ON g.id = gp.grupo_id
+      GROUP BY
+        p.id, p.nombre, p.apellido, p.telefono, p.alias_bancario
+      ORDER BY p.nombre, p.apellido, p.id
+    `);
+
+    // Marca posibles duplicados por nombre+apellido, teléfono o alias.
+    const keyCount = new Map();
+
+    const normalizar = v =>
+      String(v || "").trim().toLowerCase();
+
+    for (const p of rows) {
+      const keys = [
+        `n:${normalizar(p.nombre)}|${normalizar(p.apellido)}`,
+        p.telefono ? `t:${normalizar(p.telefono)}` : null,
+        p.alias_bancario ? `a:${normalizar(p.alias_bancario)}` : null
+      ].filter(Boolean);
+
+      p._keys = keys;
+
+      for (const k of keys) {
+        keyCount.set(k, (keyCount.get(k) || 0) + 1);
+      }
+    }
+
+    res.json(rows.map(p => ({
+      id: p.id,
+      nombre: p.nombre,
+      apellido: p.apellido,
+      telefono: p.telefono,
+      alias_bancario: p.alias_bancario,
+      grupos_activos: p.grupos_activos,
+      grupos_ocultos: p.grupos_ocultos,
+      posible_duplicado: p._keys.some(k => (keyCount.get(k) || 0) > 1)
+    })));
 
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -436,6 +548,7 @@ async function obtenerBalances({ grupoId, desde = null, hasta = null }) {
     JOIN grupo_persona gp
       ON gp.persona_id = p.id
      AND gp.grupo_id = ?
+     AND gp.activo = 1
     LEFT JOIN (
       SELECT pe.persona_id, pe.monto
       FROM pagos_evento pe
@@ -562,7 +675,7 @@ function calcularDeudas(balances) {
   return deudas;
 }
 
-async function obtenerDeudasDirectas({ grupoId, desde = null, hasta = null }) {
+async function obtenerDeudasDirectasBase({ grupoId, desde = null, hasta = null }) {
   const params = [grupoId];
   const filtros = ["e.grupo_id = ?"];
 
@@ -607,6 +720,8 @@ async function obtenerDeudasDirectas({ grupoId, desde = null, hasta = null }) {
     }
   }
 
+  const nombres = {};
+
   for (const e of eventos) {
     const [participantes] = await db.query(`
       SELECT p.id, p.nombre, p.apellido, pr.monto_asignado
@@ -623,6 +738,8 @@ async function obtenerDeudasDirectas({ grupoId, desde = null, hasta = null }) {
     `, [e.id]);
 
     const bs = participantes.map(p => {
+      nombres[p.id] = nombreCompleto(p);
+
       const puesto = pagadores
         .filter(pg => pg.id === p.id)
         .reduce((s, pg) => s + aCentavos(pg.monto), 0);
@@ -641,61 +758,6 @@ async function obtenerDeudasDirectas({ grupoId, desde = null, hasta = null }) {
     });
   }
 
-  const paramsPagos = [grupoId];
-  const filtrosPagos = ["pd.grupo_id = ?"];
-
-  if (desde) {
-    filtrosPagos.push("pd.fecha >= ?");
-    paramsPagos.push(desde);
-  }
-
-  if (hasta) {
-    filtrosPagos.push("pd.fecha <= ?");
-    paramsPagos.push(hasta);
-  }
-
-  const [pagos] = await db.query(`
-    SELECT deudor_id, acreedor_id, monto
-    FROM pagos_deuda pd
-    WHERE ${filtrosPagos.join(" AND ")}
-  `, paramsPagos);
-
-  pagos.forEach(p => {
-    const key = `${p.deudor_id}:${p.acreedor_id}`;
-    const actual = aristas.get(key) || 0;
-    const pagado = aCentavos(p.monto);
-
-    if (pagado <= actual) {
-      const resto = actual - pagado;
-      if (resto) aristas.set(key, resto);
-      else aristas.delete(key);
-    } else {
-      aristas.delete(key);
-      sumar(p.acreedor_id, p.deudor_id, pagado - actual);
-    }
-  });
-
-  const ids = new Set();
-
-  [...aristas.keys()].forEach(k => {
-    const [a,b] = k.split(":").map(Number);
-    ids.add(a);
-    ids.add(b);
-  });
-
-  const nombres = {};
-
-  if (ids.size) {
-    const marks = [...ids].map(() => "?").join(",");
-    const [rows] = await db.query(`
-      SELECT id, nombre, apellido
-      FROM personas
-      WHERE id IN (${marks})
-    `, [...ids]);
-
-    rows.forEach(p => nombres[p.id] = nombreCompleto(p));
-  }
-
   return [...aristas.entries()]
     .filter(([,c]) => c > 0)
     .map(([k,c]) => {
@@ -709,6 +771,97 @@ async function obtenerDeudasDirectas({ grupoId, desde = null, hasta = null }) {
         monto: aPesos(c)
       };
     });
+}
+
+function reconciliarDeudasDirectasConSaldos(deudasBase, balances) {
+  /*
+    Mantiene relaciones directas cuando todavía son compatibles con los
+    saldos actuales, pero TODOS los importes finales quedan limitados por
+    lo que cada persona realmente debe pagar o recibir hoy.
+
+    Esto hace que una transferencia proveniente del modo simplificado
+    también reduzca correctamente el modo "sin simplificar".
+  */
+  const deudores = new Map();
+  const acreedores = new Map();
+  const nombres = new Map();
+
+  for (const b of balances) {
+    nombres.set(b.id, b.nombre);
+
+    if (b.saldoCentavos < 0)
+      deudores.set(b.id, -b.saldoCentavos);
+
+    if (b.saldoCentavos > 0)
+      acreedores.set(b.id, b.saldoCentavos);
+  }
+
+  const resultado = [];
+
+  // Primero intentamos conservar las relaciones originales.
+  for (const d of deudasBase) {
+    const debe = deudores.get(d.deudor_id) || 0;
+    const recibe = acreedores.get(d.acreedor_id) || 0;
+
+    if (debe <= 0 || recibe <= 0)
+      continue;
+
+    const centavos = Math.min(
+      aCentavos(d.monto),
+      debe,
+      recibe
+    );
+
+    if (centavos <= 0)
+      continue;
+
+    resultado.push({
+      deudor_id: d.deudor_id,
+      deudor: nombres.get(d.deudor_id) || d.deudor,
+      acreedor_id: d.acreedor_id,
+      acreedor: nombres.get(d.acreedor_id) || d.acreedor,
+      monto: aPesos(centavos)
+    });
+
+    deudores.set(d.deudor_id, debe - centavos);
+    acreedores.set(d.acreedor_id, recibe - centavos);
+  }
+
+  // Si una transferencia simplificada cambió el camino original,
+  // completamos los saldos residuales con transferencias válidas.
+  const dRestantes = [...deudores.entries()]
+    .filter(([,c]) => c > 0)
+    .map(([id,c]) => ({ id, restante: c }));
+
+  const aRestantes = [...acreedores.entries()]
+    .filter(([,c]) => c > 0)
+    .map(([id,c]) => ({ id, restante: c }));
+
+  let i = 0;
+  let j = 0;
+
+  while (i < dRestantes.length && j < aRestantes.length) {
+    const centavos = Math.min(
+      dRestantes[i].restante,
+      aRestantes[j].restante
+    );
+
+    resultado.push({
+      deudor_id: dRestantes[i].id,
+      deudor: nombres.get(dRestantes[i].id),
+      acreedor_id: aRestantes[j].id,
+      acreedor: nombres.get(aRestantes[j].id),
+      monto: aPesos(centavos)
+    });
+
+    dRestantes[i].restante -= centavos;
+    aRestantes[j].restante -= centavos;
+
+    if (dRestantes[i].restante === 0) i++;
+    if (aRestantes[j].restante === 0) j++;
+  }
+
+  return resultado;
 }
 
 app.get("/api/resumen", async (req, res) => {
@@ -734,9 +887,17 @@ app.get("/api/resumen", async (req, res) => {
       ? todosBalances.filter(p => p.id === personaId)
       : todosBalances;
 
-    const deudas = simplificar
-      ? calcularDeudas(todosBalances)
-      : await obtenerDeudasDirectas({ grupoId, desde, hasta });
+    let deudas;
+
+    if (simplificar) {
+      deudas = calcularDeudas(todosBalances);
+    } else {
+      const deudasBase =
+        await obtenerDeudasDirectasBase({ grupoId, desde, hasta });
+
+      deudas =
+        reconciliarDeudasDirectasConSaldos(deudasBase, todosBalances);
+    }
 
     const deudasFiltradas = personaId
       ? deudas.filter(d =>
@@ -764,6 +925,7 @@ app.get("/api/resumen", async (req, res) => {
           SELECT COUNT(*)
           FROM grupo_persona
           WHERE grupo_id = ?
+            AND activo = 1
         ) AS personas,
 
         (

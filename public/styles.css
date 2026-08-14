@@ -918,3 +918,208 @@ hr {
     font-size: 9pt !important;
   }
 }
+
+
+/* ===== Directorio general ===== */
+
+.directory-card {
+  margin-top: 16px;
+}
+
+.directory-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.directory-row:last-child {
+  border-bottom: 0;
+}
+
+.directory-row.possible-duplicate {
+  margin: 6px 0;
+  padding: 14px 12px;
+  border: 1px solid #ead7a9;
+  border-radius: 10px;
+  background: #fffaf0;
+}
+
+.duplicate-badge {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #f4dfad;
+  color: #735915;
+  font-size: 10px;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.directory-current {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: var(--soft-primary);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.transfer-contact {
+  margin-top: 4px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media(max-width:700px) {
+  .directory-row {
+    flex-direction: column;
+  }
+}
+
+@media print {
+  .transfer-contact {
+    color: #354049 !important;
+    font-size: 8.5pt !important;
+  }
+}
+
+/* ===== V8: simplificación única + explicación ===== */
+
+.secondary-action {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  color: var(--primary);
+}
+
+.secondary-action:hover {
+  background: var(--soft-primary);
+}
+
+.debt-explanation {
+  margin: 0 0 16px;
+  max-width: 620px;
+}
+
+.all-settled {
+  padding: 18px;
+  border: 1px solid #cfe4d6;
+  border-radius: 10px;
+  background: #f2faf4;
+  color: var(--success);
+}
+
+.all-settled.compact {
+  padding: 12px;
+}
+
+.all-settled-title {
+  margin-bottom: 4px;
+  font-weight: 800;
+}
+
+.calc-section {
+  margin-top: 24px;
+}
+
+.calc-section h3 {
+  margin-bottom: 10px;
+}
+
+.calc-person {
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.calc-person-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.calc-formula {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.calc-formula b {
+  color: var(--ink);
+}
+
+.calc-pay {
+  color: var(--danger);
+  font-weight: 750;
+}
+
+.calc-receive {
+  color: var(--success);
+  font-weight: 750;
+}
+
+.calc-ok {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.calc-transfer {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.calc-transfer-number {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--soft-primary);
+  color: var(--primary);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.calc-transfer-amount {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.calc-note {
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--primary);
+  background: var(--soft-primary);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@media(max-width:650px) {
+  .calc-person-head {
+    flex-direction: column;
+  }
+
+  .calc-transfer {
+    grid-template-columns: 28px 1fr;
+  }
+
+  .calc-transfer-amount {
+    grid-column: 2;
+  }
+}

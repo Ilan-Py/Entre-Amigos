@@ -3,6 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#173c39">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Entre Amigos">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <title>Entre Amigos</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -66,11 +73,22 @@
             <h2>Deudas pendientes</h2>
             <p id="infoTransferencias" class="muted"></p>
           </div>
-          <label class="compact-toggle">
-            <input type="checkbox" id="simplificarDeudas" checked>
-            <span>Simplificar deudas</span>
-          </label>
+
+          <button
+            type="button"
+            id="btnExplicarCalculo"
+            class="secondary-action"
+          >
+            Ver cómo se calculó
+          </button>
         </div>
+
+        <p class="muted debt-explanation">
+          La app compensa automáticamente lo que cada persona aportó,
+          consumió y ya transfirió para proponer la menor cantidad posible
+          de transferencias pendientes.
+        </p>
+
         <div id="deudas"></div>
       </article>
 
@@ -208,6 +226,21 @@
         <div id="listaPersonas"></div>
       </article>
     </div>
+
+    <article class="card directory-card">
+      <div class="toolbar">
+        <div>
+          <h2>Directorio general</h2>
+          <p class="muted">
+            Todas las personas creadas, aunque pertenezcan a distintos grupos.
+            Sirve para reutilizar contactos y detectar posibles duplicados.
+          </p>
+        </div>
+        <input id="buscarDirectorio" class="search" placeholder="Buscar persona...">
+      </div>
+
+      <div id="directorioPersonas"></div>
+    </article>
   </section>
 
   <section id="movimientos" class="panel">

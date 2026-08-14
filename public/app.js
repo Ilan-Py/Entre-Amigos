@@ -1,6 +1,7 @@
 let grupos = [];
 let personas = [];
 let todasPersonas = [];
+let directorioPersonas = [];
 let resumen = null;
 let ultimoInforme = null;
 
@@ -66,8 +67,12 @@ async function api(url, options={}) {
 
   const data = await r.json();
 
-  if (!r.ok)
-    throw new Error(data.error || "Error");
+  if (!r.ok) {
+    const error = new Error(data.error || "Error");
+    error.status = r.status;
+    error.data = data;
+    throw error;
+  }
 
   return data;
 }
@@ -138,15 +143,17 @@ $("btnNuevoGrupo").addEventListener("click", async () => {
 async function cargarPersonas() {
   if (!grupoId()) return;
 
-  [personas, todasPersonas] = await Promise.all([
+  [personas, todasPersonas, directorioPersonas] = await Promise.all([
     api(`/api/personas?grupo_id=${grupoId()}`),
-    api("/api/personas")
+    api("/api/personas"),
+    api("/api/directorio-personas")
   ]);
 
   renderListaPersonas();
   renderSelectsPersonas();
   renderParticipantes();
   renderPersonaExistente();
+  renderDirectorio();
 }
 
 function renderListaPersonas() {
@@ -164,7 +171,7 @@ function renderListaPersonas() {
 
             <div class="person-actions">
               <button onclick="editarPersona(${p.id})">Editar</button>
-              <button onclick="quitarDelGrupo(${p.id})">Quitar</button>
+              <button onclick="quitarDelGrupo(${p.id})">Ocultar</button>
             </div>
           </div>
         </div>
@@ -219,6 +226,89 @@ function renderPersonaExistente() {
     : `<option value="">No hay personas disponibles</option>`;
 }
 
+
+function renderDirectorio(filtro = "") {
+  const q = String(filtro || "").trim().toLowerCase();
+
+  const rows = directorioPersonas.filter(p => {
+    const texto = [
+      p.nombre,
+      p.apellido,
+      p.telefono,
+      p.alias_bancario,
+      p.grupos_activos,
+      p.grupos_ocultos
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    return !q || texto.includes(q);
+  });
+
+  $("directorioPersonas").innerHTML = rows.length
+    ? rows.map(p => {
+        const estaActivo =
+          String(p.grupos_activos || "")
+            .split(",")
+            .map(x => x.trim())
+            .includes(grupoNombre());
+
+        return `
+          <div class="directory-row ${p.posible_duplicado ? "possible-duplicate" : ""}">
+            <div>
+              <div class="person-name">
+                ${nombreCompleto(p)}
+                ${p.posible_duplicado ? `<span class="duplicate-badge">Posible duplicado</span>` : ""}
+              </div>
+
+              <div class="person-meta">
+                ${p.telefono ? `Teléfono: ${p.telefono}` : "Sin teléfono"}
+                ·
+                ${p.alias_bancario ? `Alias: ${p.alias_bancario}` : "Sin alias"}
+              </div>
+
+              <div class="person-meta">
+                Grupos activos: ${p.grupos_activos || "ninguno"}
+                ${p.grupos_ocultos ? `<br>Historial en: ${p.grupos_ocultos}` : ""}
+              </div>
+            </div>
+
+            <div class="person-actions">
+              <button onclick="editarPersona(${p.id})">Editar</button>
+              ${
+                estaActivo
+                  ? `<span class="directory-current">En este grupo</span>`
+                  : `<button onclick="agregarPersonaDirectorio(${p.id})">Agregar al grupo</button>`
+              }
+            </div>
+          </div>
+        `;
+      }).join("")
+    : `<p class="muted">No hay coincidencias.</p>`;
+}
+
+async function agregarPersonaDirectorio(id) {
+  try {
+    await api(`/api/grupos/${grupoId()}/personas/${id}`, {
+      method: "POST"
+    });
+
+    await actualizarTodo();
+    toast("Persona agregada al grupo");
+
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+let timerDirectorio;
+
+$("buscarDirectorio")?.addEventListener("input", e => {
+  clearTimeout(timerDirectorio);
+
+  timerDirectorio = setTimeout(() => {
+    renderDirectorio(e.target.value);
+  }, 180);
+});
+
 $("btnAgregarExistente").addEventListener("click", async () => {
   const personaId = Number($("personaExistente").value);
   if (!personaId) return;
@@ -237,7 +327,7 @@ $("btnAgregarExistente").addEventListener("click", async () => {
 });
 
 async function quitarDelGrupo(id) {
-  if (!confirm("¿Quitar esta persona del grupo actual?")) return;
+  if (!confirm("¿Ocultar esta persona del grupo actual? El historial de gastos se conservará.")) return;
 
   try {
     await api(`/api/grupos/${grupoId()}/personas/${id}`, {
@@ -311,16 +401,18 @@ function editarPersona(id) {
 $("formPersona").addEventListener("submit", async e => {
   e.preventDefault();
 
+  const payload = {
+    nombre: $("nombrePersona").value,
+    apellido: $("apellidoPersona").value,
+    telefono: $("telefonoPersona").value,
+    alias_bancario: $("aliasPersona").value,
+    grupo_id: grupoId()
+  };
+
   try {
     await api("/api/personas", {
       method: "POST",
-      body: JSON.stringify({
-        nombre: $("nombrePersona").value,
-        apellido: $("apellidoPersona").value,
-        telefono: $("telefonoPersona").value,
-        alias_bancario: $("aliasPersona").value,
-        grupo_id: grupoId()
-      })
+      body: JSON.stringify(payload)
     });
 
     $("formPersona").reset();
@@ -328,6 +420,47 @@ $("formPersona").addEventListener("submit", async e => {
     toast("Persona agregada");
 
   } catch (e) {
+    if (e.status === 409 && e.data?.existente) {
+      const existente = e.data.existente;
+      const nom = nombreCompleto(existente);
+
+      const usarExistente = confirm(
+        `Ya existe una persona similar: ${nom}.\n\n` +
+        `Aceptar: usar esa persona en el grupo actual.\n` +
+        `Cancelar: crear otra persona distinta igualmente.`
+      );
+
+      try {
+        if (usarExistente) {
+          await api(`/api/grupos/${grupoId()}/personas/${existente.id}`, {
+            method: "POST"
+          });
+        } else {
+          await api("/api/personas", {
+            method: "POST",
+            body: JSON.stringify({
+              ...payload,
+              forzar_nuevo: true
+            })
+          });
+        }
+
+        $("formPersona").reset();
+        await actualizarTodo();
+
+        toast(
+          usarExistente
+            ? "Persona existente agregada"
+            : "Nueva persona creada"
+        );
+
+      } catch (e2) {
+        alert(e2.message);
+      }
+
+      return;
+    }
+
     alert(e.message);
   }
 });
@@ -503,9 +636,7 @@ $("formGasto").addEventListener("submit", async e => {
 async function cargarResumen() {
   if (!grupoId()) return;
 
-  const simplificar = $("simplificarDeudas").checked;
-
-  const [mensual, general, sinSimplificar] = await Promise.all([
+  const [mensual, general] = await Promise.all([
     api(
       `/api/resumen?grupo_id=${grupoId()}` +
       `&desde=${inicioMesActual()}` +
@@ -513,11 +644,7 @@ async function cargarResumen() {
     ),
     api(
       `/api/resumen?grupo_id=${grupoId()}` +
-      `&simplificar=${simplificar}`
-    ),
-    api(
-      `/api/resumen?grupo_id=${grupoId()}` +
-      `&simplificar=false`
+      `&simplificar=true`
     )
   ]);
 
@@ -535,25 +662,33 @@ async function cargarResumen() {
   $("cantPersonas").textContent =
     general.estadisticas.personas;
 
-  const ahorro =
-    sinSimplificar.cantidadTransferencias -
-    general.cantidadTransferencias;
-
-  $("infoTransferencias").textContent = simplificar
-    ? ahorro > 0
-      ? `${general.cantidadTransferencias} transferencias · ${ahorro} menos con simplificación`
-      : `${general.cantidadTransferencias} transferencias · ya está optimizado`
-    : `${general.cantidadTransferencias} transferencias sin simplificar`;
+  $("infoTransferencias").textContent =
+    general.cantidadTransferencias === 0
+      ? "Todo saldado"
+      : `${general.cantidadTransferencias} ${
+          general.cantidadTransferencias === 1
+            ? "transferencia pendiente"
+            : "transferencias pendientes"
+        } para dejar el grupo en $0`;
 
   $("deudas").innerHTML = general.deudas.length
     ? general.deudas.map((d,i) => `
         <div class="debt">
           <div><b>${d.deudor}</b> le debe a <b>${d.acreedor}</b></div>
           <div class="amount">${moneda(d.monto)}</div>
-          <button class="primary" onclick="saldarDeuda(${i})">Saldar deuda</button>
+          <button class="primary" onclick="saldarDeuda(${i})">
+            Saldar deuda
+          </button>
         </div>
       `).join("")
-    : `<p class="pending-positive">No hay deudas pendientes.</p>`;
+    : `
+      <div class="all-settled">
+        <div class="all-settled-title">Todo saldado</div>
+        <div class="muted">
+          No quedan transferencias pendientes en este grupo.
+        </div>
+      </div>
+    `;
 
   $("balances").innerHTML = general.balances.map(b => {
     const clase =
@@ -566,8 +701,6 @@ async function cargarResumen() {
         : b.saldo < -0.01
           ? `Tiene que pagar ${moneda(-b.saldo)}`
           : "Está al día";
-
-    const signoFinal = b.saldo >= 0 ? "+" : "−";
 
     return `
       <div class="balance ${clase}">
@@ -594,10 +727,99 @@ async function cargarResumen() {
   }).join("");
 }
 
-$("simplificarDeudas").addEventListener("change", async () => {
-  await cargarResumen();
-  await generarInforme();
-});
+function mostrarExplicacionCalculo() {
+  if (!resumen) return;
+
+  const filas = resumen.balances.map(b => {
+    let estado = "Está al día";
+    let clase = "calc-ok";
+
+    if (b.saldo < -0.01) {
+      estado = `Debe aportar ${moneda(-b.saldo)}`;
+      clase = "calc-pay";
+    }
+
+    if (b.saldo > 0.01) {
+      estado = `Debe recibir ${moneda(b.saldo)}`;
+      clase = "calc-receive";
+    }
+
+    return `
+      <div class="calc-person">
+        <div class="calc-person-head">
+          <b>${b.nombre}</b>
+          <span class="${clase}">${estado}</span>
+        </div>
+
+        <div class="calc-formula">
+          <span>Aportó ${moneda(b.puso)}</span>
+          <span>−</span>
+          <span>Consumió ${moneda(b.consumio)}</span>
+          <span>+</span>
+          <span>Envió ${moneda(b.transferido)}</span>
+          <span>−</span>
+          <span>Recibió ${moneda(b.recibido)}</span>
+          <span>=</span>
+          <b>${moneda(b.saldo)}</b>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  const transferencias = resumen.deudas.length
+    ? resumen.deudas.map((d, i) => `
+        <div class="calc-transfer">
+          <div class="calc-transfer-number">${i + 1}</div>
+          <div>
+            <b>${d.deudor}</b>
+            <span> → </span>
+            <b>${d.acreedor}</b>
+          </div>
+          <div class="calc-transfer-amount">
+            ${moneda(d.monto)}
+          </div>
+        </div>
+      `).join("")
+    : `
+      <div class="all-settled compact">
+        Todos los saldos ya son $0. No hace falta ninguna transferencia.
+      </div>
+    `;
+
+  $("modalContenido").innerHTML = `
+    <h2>Cómo se calcularon las deudas</h2>
+
+    <p class="muted">
+      Primero se calcula el saldo real de cada persona.
+      Después la app conecta a quienes deben pagar con quienes deben recibir,
+      usando esos saldos netos. El objetivo es que, después de realizar
+      las transferencias propuestas, todos queden exactamente en $0.
+    </p>
+
+    <div class="calc-section">
+      <h3>1. Saldo de cada persona</h3>
+      ${filas}
+    </div>
+
+    <div class="calc-section">
+      <h3>2. Transferencias propuestas</h3>
+      ${transferencias}
+    </div>
+
+    <div class="calc-note">
+      La aplicación no intenta reconstruir cada deuda histórica por separado:
+      compensa todo el grupo con los saldos actuales. Por eso puede reemplazar
+      varias transferencias encadenadas por una sola.
+    </div>
+  `;
+
+  $("modal").classList.remove("oculto");
+}
+
+$("btnExplicarCalculo")?.addEventListener(
+  "click",
+  mostrarExplicacionCalculo
+);
 
 function saldarDeuda(i) {
   const d = resumen.deudas[i];
@@ -732,7 +954,7 @@ async function generarInforme() {
   const desde = $("informeDesde").value;
   const hasta = $("informeHasta").value;
   const personaId = $("informePersona").value;
-  const simplificar = $("simplificarDeudas").checked;
+  const simplificar = true;
 
   const params = new URLSearchParams({
     grupo_id: grupoId(),
@@ -1044,3 +1266,17 @@ $("informeHasta").value = finMesActual();
   if (grupoId())
     await actualizarTodo();
 })();
+
+// ---------- PWA / SERVICE WORKER ----------
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", async () => {
+    try {
+      await navigator.serviceWorker.register("/service-worker.js");
+      console.log("Entre Amigos: Service Worker registrado.");
+    } catch (error) {
+      console.error("No se pudo registrar el Service Worker:", error);
+    }
+  });
+}
+
