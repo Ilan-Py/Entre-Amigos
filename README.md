@@ -1,4 +1,4 @@
-# Entre Amigos v6
+# Entre Amigos
 
 Aplicación web para administrar gastos compartidos entre distintos grupos.
 
