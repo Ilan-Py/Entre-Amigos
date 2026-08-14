@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entre Amigos</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">
+      <div class="brand-mark">$</div>
+      <div>
+        <h1>Entre Amigos</h1>
+        <p>Gastos compartidos, cuentas claras.</p>
+      </div>
+    </div>
+
+    <div class="group-selector">
+      <div>
+        <label>Grupo actual</label>
+        <select id="grupoActual"></select>
+      </div>
+      <button id="btnNuevoGrupo" type="button">Nuevo grupo</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="stats">
+    <div class="stat">
+      <span>Gasto del mes</span>
+      <b id="gastoTotal">$0,00</b>
+    </div>
+    <div class="stat">
+      <span>Saldo pendiente</span>
+      <b id="totalDeuda">$0,00</b>
+    </div>
+    <div class="stat">
+      <span>Eventos del mes</span>
+      <b id="cantEventos">0</b>
+    </div>
+    <div class="stat">
+      <span>Integrantes</span>
+      <b id="cantPersonas">0</b>
+    </div>
+  </section>
+
+  <nav class="tabs">
+    <button class="tab activo" data-tab="resumen">Resumen</button>
+    <button class="tab" data-tab="gasto">Nuevo gasto</button>
+    <button class="tab" data-tab="pago">Registrar pago</button>
+    <button class="tab" data-tab="personas">Personas</button>
+    <button class="tab" data-tab="movimientos">Movimientos</button>
+    <button class="tab" data-tab="informe">Informes</button>
+  </nav>
+
+  <section id="resumen" class="panel activo">
+    <div class="dos-columnas">
+      <article class="card">
+        <div class="card-title-row">
+          <div>
+            <h2>Deudas pendientes</h2>
+            <p id="infoTransferencias" class="muted"></p>
+          </div>
+          <label class="compact-toggle">
+            <input type="checkbox" id="simplificarDeudas" checked>
+            <span>Simplificar deudas</span>
+          </label>
+        </div>
+        <div id="deudas"></div>
+      </article>
+
+      <article class="card">
+        <h2>Saldos generales</h2>
+        <p class="muted">
+          La cuenta muestra de dónde sale el saldo pendiente de cada persona.
+        </p>
+        <div id="balances"></div>
+      </article>
+    </div>
+  </section>
+
+  <section id="gasto" class="panel">
+    <article class="card">
+      <h2>Registrar gasto</h2>
+      <form id="formGasto">
+        <div class="form-grid">
+          <label>
+            Descripción
+            <input id="descGasto" required placeholder="Ej: Cena del viernes">
+          </label>
+          <label>
+            Fecha
+            <input id="fechaGasto" type="date" required>
+          </label>
+        </div>
+
+        <h3>Participantes</h3>
+        <div id="participantes" class="chips"></div>
+
+        <label class="custom-check">
+          <input type="checkbox" id="divisionPersonalizada">
+          <span>Este gasto no se divide en partes iguales</span>
+        </label>
+
+        <div id="repartoPersonalizado" class="oculto">
+          <h3>Importe por participante</h3>
+          <p class="muted">La suma debe coincidir exactamente con el total del gasto.</p>
+          <div id="montosParticipantes"></div>
+          <div class="amount-preview">
+            Distribuido: <b id="previewDistribuido">$0,00</b>
+          </div>
+        </div>
+
+        <h3>Pagadores</h3>
+        <p class="muted">Solo aparecen personas que participan del gasto.</p>
+        <div id="pagadores"></div>
+
+        <div class="amount-preview total">
+          Total del gasto: <b id="previewTotal">$0,00</b>
+        </div>
+
+        <button class="primary">Guardar gasto</button>
+      </form>
+    </article>
+  </section>
+
+  <section id="pago" class="panel">
+    <article class="card">
+      <h2>Registrar transferencia</h2>
+      <p class="muted">
+        Desde Resumen podés usar “Saldar deuda” para completar este formulario.
+      </p>
+
+      <form id="formPago">
+        <div class="form-grid">
+          <label>
+            Quién paga
+            <select id="deudor" required></select>
+          </label>
+          <label>
+            A quién
+            <select id="acreedor" required></select>
+          </label>
+          <label>
+            Monto
+            <input id="montoPago" type="number" min="0.01" step="0.01" required>
+          </label>
+          <label>
+            Fecha
+            <input id="fechaPago" type="date" required>
+          </label>
+        </div>
+
+        <label>
+          Descripción
+          <input id="descPago" placeholder="Ej: Transferencia bancaria">
+        </label>
+
+        <button class="primary">Registrar transferencia</button>
+      </form>
+    </article>
+  </section>
+
+  <section id="personas" class="panel">
+    <div class="dos-columnas">
+      <article class="card">
+        <h2>Agregar persona</h2>
+
+        <form id="formPersona">
+          <div class="form-grid">
+            <label>
+              Nombre *
+              <input id="nombrePersona" required>
+            </label>
+            <label>
+              Apellido
+              <input id="apellidoPersona">
+            </label>
+            <label>
+              Teléfono
+              <input id="telefonoPersona">
+            </label>
+            <label>
+              Alias bancario
+              <input id="aliasPersona" placeholder="ejemplo.alias">
+            </label>
+          </div>
+
+          <button class="primary">Agregar al grupo actual</button>
+        </form>
+
+        <hr>
+
+        <h3>Agregar una persona existente</h3>
+        <div class="inline-form">
+          <select id="personaExistente"></select>
+          <button id="btnAgregarExistente" type="button">Agregar</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Integrantes del grupo</h2>
+        <div id="listaPersonas"></div>
+      </article>
+    </div>
+  </section>
+
+  <section id="movimientos" class="panel">
+    <article class="card">
+      <div class="toolbar">
+        <div>
+          <h2>Movimientos</h2>
+          <p class="muted">Seleccioná un gasto para ver quién participó y quién pagó.</p>
+        </div>
+        <input id="buscarMovimiento" class="search" placeholder="Buscar...">
+      </div>
+
+      <div id="listaMovimientos"></div>
+    </article>
+  </section>
+
+  <section id="informe" class="panel">
+    <article class="card">
+      <div class="toolbar">
+        <div>
+          <h2>Informes</h2>
+          <p class="muted">Filtrá por período y persona.</p>
+        </div>
+        <button type="button" onclick="window.print()">Imprimir</button>
+      </div>
+
+      <div class="report-filters">
+        <label>
+          Desde
+          <input id="informeDesde" type="date">
+        </label>
+        <label>
+          Hasta
+          <input id="informeHasta" type="date">
+        </label>
+        <label>
+          Persona
+          <select id="informePersona"></select>
+        </label>
+        <button id="btnGenerarInforme" type="button" class="primary">Generar</button>
+      </div>
+
+      <div id="contenidoInforme"></div>
+
+      <div class="share-block">
+        <div class="toolbar">
+          <div>
+            <h3>Resumen para compartir</h3>
+            <p class="muted">
+              Texto simple para enviar al grupo por WhatsApp u otro chat.
+            </p>
+          </div>
+          <button id="btnCopiarResumen" type="button">Copiar resumen</button>
+        </div>
+
+        <textarea id="resumenCompartible" readonly></textarea>
+      </div>
+    </article>
+  </section>
+</main>
+
+<div id="modal" class="modal oculto">
+  <div class="modal-card">
+    <button class="modal-close" onclick="cerrarModal()">×</button>
+    <div id="modalContenido"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
