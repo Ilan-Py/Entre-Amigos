@@ -104,71 +104,389 @@ app.post("/api/grupos/:id/restaurar", async (req, res) => {
   }
 });
 
-app.get("/api/overview", async (_, res) => {
+
+// ---------- SUPERGRUPO VIRTUAL ----------
+// No existe como fila en "grupos". Consolida todos los grupos activos
+// únicamente para lectura, informes, saldos y movimientos.
+
+app.get("/api/supergrupo/personas", async (_, res) => {
   try {
-    const [grupos] = await db.query(`
-      SELECT id, nombre, activo, archived_at
-      FROM grupos
-      ORDER BY activo DESC, nombre
+    const [rows] = await db.query(`
+      SELECT DISTINCT
+        p.id,
+        p.nombre,
+        p.apellido,
+        p.telefono,
+        p.alias_bancario
+      FROM personas p
+      JOIN grupo_persona gp ON gp.persona_id = p.id
+      JOIN grupos g ON g.id = gp.grupo_id
+      WHERE gp.activo = TRUE
+        AND g.activo = TRUE
+      ORDER BY p.nombre, p.apellido
     `);
 
-    const resultado = [];
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
-    for (const g of grupos) {
-      const balances = await obtenerBalances({ grupoId: g.id });
-      const deudas = calcularDeudas(balances);
+async function obtenerBalancesSupergrupo({ desde = null, hasta = null } = {}) {
+  const paramsEventos = [];
+  const filtrosEventos = ["g.activo = TRUE"];
 
-      const [[stats]] = await db.query(`
-        SELECT
-          (
-            SELECT COUNT(*)
-            FROM grupo_persona
-            WHERE grupo_id = ?
-              AND activo = TRUE
-          ) AS personas,
-          (
-            SELECT COUNT(*)
-            FROM eventos
-            WHERE grupo_id = ?
-          ) AS eventos,
-          (
-            SELECT COALESCE(SUM(pe.monto),0)
-            FROM pagos_evento pe
-            JOIN eventos e ON e.id = pe.evento_id
-            WHERE e.grupo_id = ?
-          ) AS gasto_total
-      `, [g.id, g.id, g.id]);
+  if (desde) {
+    filtrosEventos.push("e.fecha >= ?");
+    paramsEventos.push(desde);
+  }
 
-      resultado.push({
-        id: g.id,
-        nombre: g.nombre,
-        activo: g.activo,
-        archived_at: g.archived_at,
-        personas: Number(stats.personas || 0),
-        eventos: Number(stats.eventos || 0),
-        gasto_total: Number(stats.gasto_total || 0),
-        total_pendiente: deudas.reduce((s,d) => s + Number(d.monto), 0),
-        transferencias_pendientes: deudas.length,
-        balances: balances.map(b => ({
-          id: b.id,
-          nombre: b.nombre,
-          saldo: b.saldo
-        }))
-      });
+  if (hasta) {
+    filtrosEventos.push("e.fecha <= ?");
+    paramsEventos.push(hasta);
+  }
+
+  const [personas] = await db.query(`
+    SELECT DISTINCT
+      p.id,
+      p.nombre,
+      p.apellido
+    FROM personas p
+    JOIN grupo_persona gp ON gp.persona_id = p.id
+    JOIN grupos g ON g.id = gp.grupo_id
+    WHERE gp.activo = TRUE
+      AND g.activo = TRUE
+    ORDER BY p.nombre, p.apellido
+  `);
+
+  const [pagosEvento] = await db.query(`
+    SELECT
+      pe.persona_id,
+      COALESCE(SUM(pe.monto),0) AS puso
+    FROM pagos_evento pe
+    JOIN eventos e ON e.id = pe.evento_id
+    JOIN grupos g ON g.id = e.grupo_id
+    WHERE ${filtrosEventos.join(" AND ")}
+    GROUP BY pe.persona_id
+  `, paramsEventos);
+
+  const [consumos] = await db.query(`
+    SELECT
+      pr.persona_id,
+      COALESCE(SUM(pr.monto_asignado),0) AS consumio
+    FROM participantes pr
+    JOIN eventos e ON e.id = pr.evento_id
+    JOIN grupos g ON g.id = e.grupo_id
+    WHERE ${filtrosEventos.join(" AND ")}
+    GROUP BY pr.persona_id
+  `, paramsEventos);
+
+  const paramsTransferencias = [];
+  const filtrosTransferencias = ["g.activo = TRUE"];
+
+  if (desde) {
+    filtrosTransferencias.push("pd.fecha >= ?");
+    paramsTransferencias.push(desde);
+  }
+
+  if (hasta) {
+    filtrosTransferencias.push("pd.fecha <= ?");
+    paramsTransferencias.push(hasta);
+  }
+
+  const [transferencias] = await db.query(`
+    SELECT
+      pd.deudor_id,
+      pd.acreedor_id,
+      pd.monto
+    FROM pagos_deuda pd
+    JOIN grupos g ON g.id = pd.grupo_id
+    WHERE ${filtrosTransferencias.join(" AND ")}
+  `, paramsTransferencias);
+
+  const mapa = {};
+
+  personas.forEach(p => {
+    mapa[p.id] = {
+      id: p.id,
+      nombre: nombreCompleto(p),
+      pusoCentavos: 0,
+      consumioCentavos: 0,
+      enviadoCentavos: 0,
+      recibidoCentavos: 0
+    };
+  });
+
+  pagosEvento.forEach(p => {
+    if (mapa[p.persona_id]) {
+      mapa[p.persona_id].pusoCentavos = aCentavos(p.puso);
+    }
+  });
+
+  consumos.forEach(c => {
+    if (mapa[c.persona_id]) {
+      mapa[c.persona_id].consumioCentavos = aCentavos(c.consumio);
+    }
+  });
+
+  transferencias.forEach(t => {
+    const c = aCentavos(t.monto);
+
+    if (mapa[t.deudor_id]) {
+      mapa[t.deudor_id].enviadoCentavos += c;
     }
 
-    const activos = resultado.filter(g => g.activo);
+    if (mapa[t.acreedor_id]) {
+      mapa[t.acreedor_id].recibidoCentavos += c;
+    }
+  });
+
+  return Object.values(mapa).map(p => {
+    const saldoAntes = p.pusoCentavos - p.consumioCentavos;
+    const saldoFinal =
+      saldoAntes +
+      p.enviadoCentavos -
+      p.recibidoCentavos;
+
+    return {
+      id: p.id,
+      nombre: p.nombre,
+      puso: aPesos(p.pusoCentavos),
+      consumio: aPesos(p.consumioCentavos),
+      saldoAntes: aPesos(saldoAntes),
+      transferido: aPesos(p.enviadoCentavos),
+      recibido: aPesos(p.recibidoCentavos),
+      saldo: aPesos(saldoFinal),
+      saldoCentavos: saldoFinal
+    };
+  });
+}
+
+app.get("/api/supergrupo/resumen", async (req, res) => {
+  try {
+    const desde = req.query.desde || null;
+    const hasta = req.query.hasta || null;
+    const personaId = Number(req.query.persona_id || 0);
+
+    const todosBalances =
+      await obtenerBalancesSupergrupo({ desde, hasta });
+
+    const balances = personaId
+      ? todosBalances.filter(p => p.id === personaId)
+      : todosBalances;
+
+    // Para el supergrupo se calcula una única compensación global.
+    const deudas = calcularDeudas(todosBalances);
+
+    const deudasFiltradas = personaId
+      ? deudas.filter(d =>
+          d.deudor_id === personaId ||
+          d.acreedor_id === personaId
+        )
+      : deudas;
+
+    const params = [];
+    const filtros = ["g.activo = TRUE"];
+
+    if (desde) {
+      filtros.push("e.fecha >= ?");
+      params.push(desde);
+    }
+
+    if (hasta) {
+      filtros.push("e.fecha <= ?");
+      params.push(hasta);
+    }
+
+    const [[stats]] = await db.query(`
+      SELECT
+        (
+          SELECT COUNT(DISTINCT gp.persona_id)
+          FROM grupo_persona gp
+          JOIN grupos g ON g.id = gp.grupo_id
+          WHERE gp.activo = TRUE
+            AND g.activo = TRUE
+        ) AS personas,
+
+        (
+          SELECT COUNT(*)
+          FROM eventos e
+          JOIN grupos g ON g.id = e.grupo_id
+          WHERE ${filtros.join(" AND ")}
+        ) AS eventos,
+
+        (
+          SELECT COALESCE(SUM(pe.monto),0)
+          FROM pagos_evento pe
+          JOIN eventos e ON e.id = pe.evento_id
+          JOIN grupos g ON g.id = e.grupo_id
+          WHERE ${filtros.join(" AND ")}
+        ) AS gasto_total
+    `, [...params, ...params]);
 
     res.json({
-      grupos: resultado,
-      resumen: {
-        grupos_activos: activos.length,
-        grupos_archivados: resultado.filter(g => !g.activo).length,
-        gasto_total: activos.reduce((s,g) => s + g.gasto_total, 0),
-        total_pendiente: activos.reduce((s,g) => s + g.total_pendiente, 0),
-        eventos: activos.reduce((s,g) => s + g.eventos, 0)
-      }
+      balances,
+      deudas: deudasFiltradas,
+      totalDeuda: aPesos(
+        deudas.reduce((s,d) => s + aCentavos(d.monto), 0)
+      ),
+      cantidadTransferencias: deudasFiltradas.length,
+      simplificado: true,
+      estadisticas: stats
     });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/supergrupo/eventos", async (req, res) => {
+  try {
+    const desde = req.query.desde || null;
+    const hasta = req.query.hasta || null;
+
+    const params = [];
+    const filtros = ["g.activo = TRUE"];
+
+    if (desde) {
+      filtros.push("e.fecha >= ?");
+      params.push(desde);
+    }
+
+    if (hasta) {
+      filtros.push("e.fecha <= ?");
+      params.push(hasta);
+    }
+
+    const [eventos] = await db.query(`
+      SELECT
+        e.id,
+        e.descripcion,
+        e.fecha,
+        e.categoria,
+        g.nombre AS grupo
+      FROM eventos e
+      JOIN grupos g ON g.id = e.grupo_id
+      WHERE ${filtros.join(" AND ")}
+      ORDER BY e.fecha, e.id
+    `, params);
+
+    for (const e of eventos) {
+      const [participantes] = await db.query(`
+        SELECT
+          p.id,
+          p.nombre,
+          p.apellido,
+          pr.monto_asignado
+        FROM participantes pr
+        JOIN personas p ON p.id = pr.persona_id
+        WHERE pr.evento_id = ?
+        ORDER BY p.nombre, p.apellido
+      `, [e.id]);
+
+      const [pagadores] = await db.query(`
+        SELECT
+          p.id,
+          p.nombre,
+          p.apellido,
+          pe.monto
+        FROM pagos_evento pe
+        JOIN personas p ON p.id = pe.persona_id
+        WHERE pe.evento_id = ?
+        ORDER BY p.nombre, p.apellido
+      `, [e.id]);
+
+      e.participantes = participantes.map(p => ({
+        id: p.id,
+        nombre: nombreCompleto(p),
+        monto_asignado: Number(p.monto_asignado)
+      }));
+
+      e.pagadores = pagadores.map(p => ({
+        id: p.id,
+        nombre: nombreCompleto(p),
+        monto: Number(p.monto)
+      }));
+
+      e.total = e.pagadores.reduce(
+        (s,p) => s + Number(p.monto),
+        0
+      );
+    }
+
+    res.json(eventos);
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/supergrupo/movimientos", async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    const like = `%${q}%`;
+
+    const [eventos] = await db.query(`
+      SELECT
+        e.id,
+        e.fecha,
+        e.descripcion,
+        e.categoria,
+        g.nombre AS grupo,
+        COALESCE(SUM(pe.monto),0) AS monto,
+        'Gasto' AS tipo
+      FROM eventos e
+      JOIN grupos g ON g.id = e.grupo_id
+      LEFT JOIN pagos_evento pe ON pe.evento_id = e.id
+      WHERE g.activo = TRUE
+        ${
+          q
+            ? "AND (e.descripcion ILIKE ? OR e.categoria ILIKE ? OR g.nombre ILIKE ?)"
+            : ""
+        }
+      GROUP BY
+        e.id,
+        e.fecha,
+        e.descripcion,
+        e.categoria,
+        g.nombre
+    `, q ? [like, like, like] : []);
+
+    const [pagos] = await db.query(`
+      SELECT
+        pd.id,
+        pd.fecha,
+        pd.descripcion,
+        pd.monto,
+        g.nombre AS grupo,
+        'Pago' AS tipo,
+        CONCAT_WS(' ', d.nombre, NULLIF(d.apellido,'')) AS deudor,
+        CONCAT_WS(' ', a.nombre, NULLIF(a.apellido,'')) AS acreedor
+      FROM pagos_deuda pd
+      JOIN grupos g ON g.id = pd.grupo_id
+      JOIN personas d ON d.id = pd.deudor_id
+      JOIN personas a ON a.id = pd.acreedor_id
+      WHERE g.activo = TRUE
+        ${
+          q
+            ? `AND (
+              pd.descripcion ILIKE ?
+              OR d.nombre ILIKE ?
+              OR a.nombre ILIKE ?
+              OR g.nombre ILIKE ?
+            )`
+            : ""
+        }
+    `, q ? [like, like, like, like] : []);
+
+    res.json(
+      [...eventos, ...pagos].sort(
+        (a,b) =>
+          String(b.fecha).localeCompare(String(a.fecha)) ||
+          Number(b.id) - Number(a.id)
+      )
+    );
+
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

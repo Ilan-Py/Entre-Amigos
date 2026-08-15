@@ -31,7 +31,7 @@
         <select id="grupoActual"></select>
       </div>
       <button id="btnNuevoGrupo" type="button">Nuevo grupo</button>
-      <button id="btnArchivarGrupo" type="button" class="group-danger-action">Archivar</button>
+      <button id="btnArchivarGrupo" type="button" class="group-danger-action">Archivar grupo</button>
     </div>
   </div>
 </header>
@@ -58,8 +58,7 @@
   </section>
 
   <nav class="tabs">
-    <button class="tab activo" data-tab="overview">Todos los grupos</button>
-    <button class="tab" data-tab="resumen">Resumen</button>
+    <button class="tab activo" data-tab="resumen">Resumen</button>
     <button class="tab" data-tab="gasto">Nuevo gasto</button>
     <button class="tab" data-tab="pago">Registrar pago</button>
     <button class="tab" data-tab="personas">Personas</button>
@@ -67,31 +66,7 @@
     <button class="tab" data-tab="informe">Informes</button>
   </nav>
 
-  <section id="overview" class="panel activo">
-    <article class="card overview-hero">
-      <div class="toolbar">
-        <div>
-          <h2>Todos los grupos</h2>
-          <p class="muted">
-            Vista general de tu actividad. Las deudas de cada grupo se mantienen separadas.
-          </p>
-        </div>
-
-        <button id="btnVerArchivados" type="button">Grupos archivados</button>
-      </div>
-
-      <div class="overview-stats">
-        <div><span>Grupos activos</span><b id="overviewGrupos">—</b></div>
-        <div><span>Gasto acumulado</span><b id="overviewGasto">—</b></div>
-        <div><span>Pendiente total</span><b id="overviewPendiente">—</b></div>
-        <div><span>Eventos</span><b id="overviewEventos">—</b></div>
-      </div>
-    </article>
-
-    <div id="overviewLista" class="overview-groups"></div>
-  </section>
-
-  <section id="resumen" class="panel">
+<section id="resumen" class="panel activo">
     <div class="dos-columnas">
       <article class="card">
         <div class="card-title-row">

@@ -1,5 +1,4 @@
 let grupos = [];
-let todosGrupos = [];
 let personas = [];
 let todasPersonas = [];
 let directorioPersonas = [];
@@ -41,11 +40,18 @@ function fechaAR(fecha) {
   return `${d}/${m}/${y}`;
 }
 
+function esSupergrupo() {
+  return $("grupoActual")?.value === "super";
+}
+
 function grupoId() {
+  if (esSupergrupo()) return 0;
   return Number($("grupoActual").value || 0);
 }
 
 function grupoNombre() {
+  if (esSupergrupo()) return "Todos mis amigos";
+
   const g = grupos.find(x => x.id === grupoId());
   return g?.nombre || "";
 }
@@ -133,33 +139,55 @@ document.querySelectorAll(".tab").forEach(btn => {
 // ---------- GRUPOS ----------
 
 async function cargarGrupos() {
-  [grupos, todosGrupos] = await Promise.all([
-    api("/api/grupos"),
-    api("/api/grupos?incluir_archivados=true")
-  ]);
+  grupos = await api("/api/grupos");
 
-  $("grupoActual").innerHTML = grupos.map(g =>
-    `<option value="${g.id}">${g.nombre}</option>`
-  ).join("");
+  $("grupoActual").innerHTML =
+    `<option value="super">Todos mis amigos</option>` +
+    grupos.map(g =>
+      `<option value="${g.id}">${g.nombre}</option>`
+    ).join("");
 
-  if (!grupos.length) return;
+  const guardado =
+    localStorage.getItem("grupo_actual");
 
-  const guardado = Number(localStorage.getItem("grupo_actual"));
-
-  if (grupos.some(g => g.id === guardado)) {
+  if (
+    guardado === "super" ||
+    grupos.some(g => String(g.id) === guardado)
+  ) {
     $("grupoActual").value = guardado;
   } else {
-    $("grupoActual").value = grupos[0].id;
-    localStorage.setItem("grupo_actual", grupos[0].id);
+    $("grupoActual").value = "super";
+    localStorage.setItem("grupo_actual", "super");
   }
+
+  actualizarModoSupergrupo();
 }
 
 $("grupoActual").addEventListener("change", async () => {
-  localStorage.setItem("grupo_actual", grupoId());
+  localStorage.setItem(
+    "grupo_actual",
+    $("grupoActual").value
+  );
+
+  actualizarModoSupergrupo();
   setStatsLoading();
-  setLoading(true, "Cambiando de grupo", "Actualizando saldos y movimientos...");
+
+  setLoading(
+    true,
+    esSupergrupo()
+      ? "Cargando todos tus grupos"
+      : "Cambiando de grupo",
+    esSupergrupo()
+      ? "Consolidando saldos y movimientos..."
+      : "Actualizando saldos y movimientos..."
+  );
+
   try {
-    await actualizarTodo();
+    if (esSupergrupo()) {
+      await actualizarSupergrupo();
+    } else {
+      await actualizarTodo();
+    }
   } finally {
     setLoading(false);
   }
@@ -199,30 +227,365 @@ $("btnNuevoGrupo").addEventListener("click", async () => {
 });
 
 
+
+function actualizarModoSupergrupo() {
+  const supergrupo = esSupergrupo();
+
+  $("btnArchivarGrupo")?.classList.toggle(
+    "oculto",
+    supergrupo
+  );
+
+  // En supergrupo no se cargan gastos/pagos ni se administran membresías.
+  document.querySelector('.tab[data-tab="gasto"]')
+    ?.classList.toggle("oculto", supergrupo);
+
+  document.querySelector('.tab[data-tab="pago"]')
+    ?.classList.toggle("oculto", supergrupo);
+
+  document.querySelector('.tab[data-tab="personas"]')
+    ?.classList.toggle("oculto", supergrupo);
+
+  if (supergrupo) {
+    const activo = document.querySelector(".panel.activo")?.id;
+
+    if (["gasto", "pago", "personas"].includes(activo)) {
+      abrirTab("resumen");
+    }
+  }
+}
+
+async function cargarPersonasSupergrupo() {
+  personas = await api("/api/supergrupo/personas");
+  todasPersonas = await api("/api/personas");
+  directorioPersonas = await api("/api/directorio-personas");
+
+  renderSelectsPersonas();
+}
+
+async function cargarResumenSupergrupo() {
+  const desde = inicioMesActual();
+  const hasta = finMesActual();
+
+  const [mensual, general] = await Promise.all([
+    api(`/api/supergrupo/resumen?desde=${desde}&hasta=${hasta}`),
+    api("/api/supergrupo/resumen")
+  ]);
+
+  resumen = general;
+
+  $("gastoTotal").textContent =
+    moneda(mensual.estadisticas.gasto_total);
+
+  $("totalDeuda").textContent =
+    moneda(general.totalDeuda);
+
+  $("cantEventos").textContent =
+    mensual.estadisticas.eventos;
+
+  $("cantPersonas").textContent =
+    general.estadisticas.personas;
+
+  $("infoTransferencias").textContent =
+    general.cantidadTransferencias === 0
+      ? "Todo saldado entre todos tus grupos"
+      : `${general.cantidadTransferencias} ${
+          general.cantidadTransferencias === 1
+            ? "transferencia pendiente"
+            : "transferencias pendientes"
+        } en la vista consolidada`;
+
+  $("deudas").innerHTML = general.deudas.length
+    ? general.deudas.map(d => `
+        <div class="debt">
+          <div>
+            <b>${d.deudor}</b>
+            le debe a
+            <b>${d.acreedor}</b>
+          </div>
+
+          <div class="amount">${moneda(d.monto)}</div>
+
+          <div class="muted">
+            Vista consolidada: registrá los pagos dentro del grupo correspondiente.
+          </div>
+        </div>
+      `).join("")
+    : `
+      <div class="all-settled">
+        <div class="all-settled-title">Todo saldado</div>
+        <div class="muted">
+          Considerando todos los grupos activos, no hay saldo pendiente.
+        </div>
+      </div>
+    `;
+
+  $("balances").innerHTML = general.balances.map(b => {
+    const clase =
+      b.saldo > 0.01
+        ? "pending-positive"
+        : b.saldo < -0.01
+          ? "pending-negative"
+          : "";
+
+    const texto =
+      b.saldo > 0.01
+        ? `Tiene que recibir ${moneda(b.saldo)}`
+        : b.saldo < -0.01
+          ? `Tiene que pagar ${moneda(-b.saldo)}`
+          : "Está al día";
+
+    return `
+      <div class="balance ${clase}">
+        <div class="balance-head">
+          <div class="balance-name">${b.nombre}</div>
+          <b>${texto}</b>
+        </div>
+
+        <div class="balance-equation">
+          <div>
+            Aportó <b>${moneda(b.puso)}</b>
+            − consumió <b>${moneda(b.consumio)}</b>
+            = saldo inicial <b>${moneda(b.saldoAntes)}</b>
+          </div>
+
+          <div>
+            + transferencias enviadas <b>${moneda(b.transferido)}</b>
+            − transferencias recibidas <b>${moneda(b.recibido)}</b>
+            = saldo consolidado <b>${moneda(b.saldo)}</b>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function cargarMovimientosSupergrupo(q = "") {
+  const url = q
+    ? `/api/supergrupo/movimientos?q=${encodeURIComponent(q)}`
+    : "/api/supergrupo/movimientos";
+
+  const movimientos = await api(url);
+
+  $("listaMovimientos").innerHTML = movimientos.length
+    ? movimientos.map(m => {
+        if (m.tipo === "Gasto") {
+          return `
+            <div class="movement">
+              <div class="movement-title">${m.descripcion}</div>
+              <div class="movement-category">
+                ${m.categoria || "Otros"} · ${m.grupo}
+              </div>
+              <div>${moneda(m.monto)}</div>
+              <div class="movement-meta">
+                ${fechaAR(m.fecha)}
+              </div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="movement">
+            <div class="movement-title">
+              ${m.descripcion || "Transferencia"}
+            </div>
+            <div>${moneda(m.monto)}</div>
+            <div class="movement-meta">
+              ${fechaAR(m.fecha)}
+              · ${m.grupo}
+              · ${m.deudor} → ${m.acreedor}
+            </div>
+          </div>
+        `;
+      }).join("")
+    : `<p class="muted">No hay movimientos.</p>`;
+}
+
+async function generarInformeSupergrupo() {
+  const desde = $("informeDesde").value;
+  const hasta = $("informeHasta").value;
+  const personaId = $("informePersona").value;
+
+  const params = new URLSearchParams();
+
+  if (desde) params.set("desde", desde);
+  if (hasta) params.set("hasta", hasta);
+  if (personaId) params.set("persona_id", personaId);
+
+  const paramsEventos = new URLSearchParams();
+
+  if (desde) paramsEventos.set("desde", desde);
+  if (hasta) paramsEventos.set("hasta", hasta);
+
+  const [data, eventos] = await Promise.all([
+    api(`/api/supergrupo/resumen?${params.toString()}`),
+    api(`/api/supergrupo/eventos?${paramsEventos.toString()}`)
+  ]);
+
+  ultimoInforme = {
+    data,
+    eventos,
+    desde,
+    hasta,
+    personaId
+  };
+
+  const persona =
+    personaId
+      ? personas.find(p => p.id === Number(personaId))
+      : null;
+
+  const titulo = persona
+    ? `Informe general de ${nombreCompleto(persona)}`
+    : "Informe general · Todos mis amigos";
+
+  const periodo =
+    `${desde ? fechaAR(desde) : "Inicio"} — ${
+      hasta ? fechaAR(hasta) : "Actualidad"
+    }`;
+
+  const filas = data.balances.map(b => {
+    let estado = "Al día";
+    let clase = "ok";
+
+    if (b.saldo > 0.01) {
+      estado = `Recibe ${moneda(b.saldo)}`;
+      clase = "receive";
+    } else if (b.saldo < -0.01) {
+      estado = `Paga ${moneda(-b.saldo)}`;
+      clase = "pay";
+    }
+
+    return `
+      <tr>
+        <td><b>${b.nombre}</b></td>
+        <td>${moneda(b.puso)}</td>
+        <td>${moneda(b.consumio)}</td>
+        <td>${moneda(b.transferido)}</td>
+        <td>${moneda(b.recibido)}</td>
+        <td>
+          <span class="report-status ${clase}">
+            ${estado}
+          </span>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  const deudas = data.deudas.length
+    ? `
+      <div class="report-debt-list">
+        ${data.deudas.map(d => `
+          <div class="report-debt-row">
+            <div><b>${d.deudor}</b></div>
+            <div class="arrow">→</div>
+            <div class="receiver"><b>${d.acreedor}</b></div>
+            <div class="debt-amount">${moneda(d.monto)}</div>
+          </div>
+        `).join("")}
+      </div>
+    `
+    : `<p class="pending-positive">No hay saldo consolidado pendiente.</p>`;
+
+  $("contenidoInforme").innerHTML = `
+    <div class="report-header">
+      <div>
+        <h3>${titulo}</h3>
+        <div class="report-period">${periodo}</div>
+      </div>
+
+      <div class="report-total-box">
+        <span>Gasto total de todos los grupos</span>
+        <b>${moneda(data.estadisticas.gasto_total)}</b>
+      </div>
+    </div>
+
+    <div class="report-section">
+      <h3 class="report-section-title">
+        Resumen consolidado
+      </h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Persona</th>
+            <th>Aportó</th>
+            <th>Consumió</th>
+            <th>Transf. enviadas</th>
+            <th>Transf. recibidas</th>
+            <th>Estado actual</th>
+          </tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+
+    <div class="report-section">
+      <h3 class="report-section-title">
+        Compensación general
+      </h3>
+      ${deudas}
+    </div>
+
+    <div class="report-section">
+      <p class="muted">
+        Este informe consolida todos los grupos activos.
+        Los movimientos originales permanecen asociados a sus grupos reales.
+      </p>
+    </div>
+  `;
+
+  generarResumenCompartible();
+}
+
+async function actualizarSupergrupo() {
+  await cargarPersonasSupergrupo();
+
+  await Promise.all([
+    cargarResumenSupergrupo(),
+    cargarMovimientosSupergrupo()
+  ]);
+
+  await generarInformeSupergrupo();
+  clearStatsLoading();
+}
+
 $("btnArchivarGrupo")?.addEventListener("click", async () => {
-  if (!grupoId()) return;
+  if (esSupergrupo() || !grupoId()) return;
+
+  const nombre = grupoNombre();
 
   if (!confirm(
-    `¿Archivar "${grupoNombre()}"?\n\n` +
-    `El grupo desaparecerá de la vista normal, pero todo su historial se conservará.`
-  )) return;
+    `¿Archivar el grupo "${nombre}"?\n\n` +
+    `Va a dejar de aparecer entre los grupos activos, ` +
+    `pero no se borrará ningún gasto ni movimiento.`
+  )) {
+    return;
+  }
+
+  setLoading(
+    true,
+    "Archivando grupo",
+    "Verificando que no queden saldos pendientes..."
+  );
 
   try {
     await api(`/api/grupos/${grupoId()}/archivar`, {
       method: "POST"
     });
 
-    toast("Grupo archivado");
-    localStorage.removeItem("grupo_actual");
+    toast("Grupo archivado correctamente");
+
+    localStorage.setItem("grupo_actual", "super");
 
     await cargarGrupos();
+    $("grupoActual").value = "super";
 
-    if (grupoId()) {
-      await actualizarTodo();
-    } else {
-      await cargarOverview();
-      abrirTab("overview");
-    }
+    actualizarModoSupergrupo();
+    await actualizarSupergrupo();
+
+    abrirTab("resumen");
+
   } catch (e) {
     if (e.data?.pendientes?.length) {
       const detalle = e.data.pendientes.map(p => {
@@ -231,146 +594,79 @@ $("btnArchivarGrupo")?.addEventListener("click", async () => {
           : `• ${p.nombre}: debe pagar ${moneda(-p.saldo)}`;
       }).join("\n");
 
-      alert(`${e.message}\n\n${detalle}`);
-      return;
+      alert(
+        `No se puede archivar el grupo todavía.\n\n${detalle}`
+      );
+    } else {
+      alert(e.message);
     }
-
-    alert(e.message);
+  } finally {
+    setLoading(false);
   }
 });
 
-async function restaurarGrupo(id) {
+async function mostrarGruposArchivados() {
   try {
-    await api(`/api/grupos/${id}/restaurar`, { method: "POST" });
+    const todos =
+      await api("/api/grupos?incluir_archivados=true");
 
-    await cargarGrupos();
+    const archivados =
+      todos.filter(g => !g.activo);
 
-    $("grupoActual").value = id;
-    localStorage.setItem("grupo_actual", id);
+    $("modalContenido").innerHTML = `
+      <h2>Grupos archivados</h2>
 
-    await actualizarTodo();
-    cerrarModal();
-    abrirTab("resumen");
-    toast("Grupo restaurado");
+      <p class="muted">
+        Archivar solo oculta el grupo de la vista normal.
+        Todo su historial permanece guardado.
+      </p>
+
+      ${
+        archivados.length
+          ? archivados.map(g => `
+              <div class="archived-group-row">
+                <div><b>${g.nombre}</b></div>
+
+                <button
+                  type="button"
+                  onclick="restaurarGrupo(${g.id})"
+                >
+                  Restaurar grupo
+                </button>
+              </div>
+            `).join("")
+          : `<p class="muted">No hay grupos archivados.</p>`
+      }
+    `;
+
+    $("modal").classList.remove("oculto");
+
   } catch (e) {
     alert(e.message);
   }
 }
 
-$("btnVerArchivados")?.addEventListener("click", () => {
-  const archivados = todosGrupos.filter(g => !g.activo);
-
-  $("modalContenido").innerHTML = `
-    <h2>Grupos archivados</h2>
-    <p class="muted">
-      El historial se conserva completo y podés restaurarlos cuando quieras.
-    </p>
-
-    ${
-      archivados.length
-        ? archivados.map(g => `
-            <div class="archived-group-row">
-              <div>
-                <b>${g.nombre}</b>
-                <div class="muted">Archivado</div>
-              </div>
-              <button type="button" onclick="restaurarGrupo(${g.id})">
-                Restaurar
-              </button>
-            </div>
-          `).join("")
-        : `<p class="muted">No hay grupos archivados.</p>`
-    }
-  `;
-
-  $("modal").classList.remove("oculto");
-});
-
-async function cargarOverview() {
-  const data = await api("/api/overview");
-
-  $("overviewGrupos").textContent = data.resumen.grupos_activos;
-  $("overviewGasto").textContent = moneda(data.resumen.gasto_total);
-  $("overviewPendiente").textContent = moneda(data.resumen.total_pendiente);
-  $("overviewEventos").textContent = data.resumen.eventos;
-
-  const activos = data.grupos.filter(g => g.activo);
-
-  $("overviewLista").innerHTML = activos.length
-    ? activos.map(g => {
-        const pendientes = g.balances.filter(
-          b => Math.abs(Number(b.saldo)) > 0.01
-        );
-
-        return `
-          <article class="card overview-group-card">
-            <div class="overview-group-head">
-              <div>
-                <h3>${g.nombre}</h3>
-                <div class="muted">
-                  ${g.personas} integrantes · ${g.eventos} eventos
-                </div>
-              </div>
-
-              <button type="button" onclick="abrirGrupoDesdeOverview(${g.id})">
-                Abrir grupo
-              </button>
-            </div>
-
-            <div class="overview-group-numbers">
-              <div>
-                <span>Gasto total</span>
-                <b>${moneda(g.gasto_total)}</b>
-              </div>
-              <div>
-                <span>Pendiente</span>
-                <b>${moneda(g.total_pendiente)}</b>
-              </div>
-              <div>
-                <span>Transferencias</span>
-                <b>${g.transferencias_pendientes}</b>
-              </div>
-            </div>
-
-            ${
-              pendientes.length
-                ? `
-                  <div class="overview-balance-list">
-                    ${pendientes.map(p => `
-                      <span class="${
-                        p.saldo > 0
-                          ? "overview-positive"
-                          : "overview-negative"
-                      }">
-                        ${p.nombre}:
-                        ${
-                          p.saldo > 0
-                            ? `+${moneda(p.saldo)}`
-                            : `−${moneda(-p.saldo)}`
-                        }
-                      </span>
-                    `).join("")}
-                  </div>
-                `
-                : `<div class="overview-settled">Todo saldado</div>`
-            }
-          </article>
-        `;
-      }).join("")
-    : `<article class="card"><p class="muted">Todavía no hay grupos activos.</p></article>`;
-}
-
-async function abrirGrupoDesdeOverview(id) {
-  $("grupoActual").value = id;
-  localStorage.setItem("grupo_actual", id);
-
-  setLoading(true, "Abriendo grupo", "Actualizando gastos y saldos...");
-
+async function restaurarGrupo(id) {
   try {
+    await api(`/api/grupos/${id}/restaurar`, {
+      method: "POST"
+    });
+
+    await cargarGrupos();
+
+    $("grupoActual").value = String(id);
+    localStorage.setItem("grupo_actual", String(id));
+
+    actualizarModoSupergrupo();
+    cerrarModal();
+
     await actualizarTodo();
     abrirTab("resumen");
-  } finally {
-    setLoading(false);
+
+    toast("Grupo restaurado");
+
+  } catch (e) {
+    alert(e.message);
   }
 }
 
@@ -1247,7 +1543,11 @@ $("buscarMovimiento").addEventListener("input", e => {
   clearTimeout(timerBusqueda);
 
   timerBusqueda = setTimeout(() => {
-    cargarMovimientos(e.target.value);
+    if (esSupergrupo()) {
+      cargarMovimientosSupergrupo(e.target.value);
+    } else {
+      cargarMovimientos(e.target.value);
+    }
   }, 250);
 });
 
@@ -1587,7 +1887,13 @@ Generado con Entre Amigos.`;
   $("resumenCompartible").value = texto;
 }
 
-$("btnGenerarInforme").addEventListener("click", generarInforme);
+$("btnGenerarInforme").addEventListener("click", () => {
+  if (esSupergrupo()) {
+    generarInformeSupergrupo();
+  } else {
+    generarInforme();
+  }
+});
 
 $("btnCopiarResumen").addEventListener("click", async () => {
   const texto = $("resumenCompartible").value;
@@ -1604,6 +1910,24 @@ $("btnCopiarResumen").addEventListener("click", async () => {
   }
 });
 
+
+const btnArchivados = document.createElement("button");
+btnArchivados.id = "btnGruposArchivados";
+btnArchivados.type = "button";
+btnArchivados.textContent = "Archivados";
+btnArchivados.className = "archived-groups-action";
+
+$("btnArchivarGrupo")?.insertAdjacentElement(
+  "afterend",
+  btnArchivados
+);
+
+btnArchivados.addEventListener(
+  "click",
+  mostrarGruposArchivados
+);
+
+
 // ---------- INIT ----------
 
 async function actualizarTodo() {
@@ -1615,7 +1939,6 @@ async function actualizarTodo() {
   ]);
 
   await generarInforme();
-  await cargarOverview();
   clearStatsLoading();
 }
 
@@ -1631,22 +1954,25 @@ $("informeHasta").value = finMesActual();
   try {
     await cargarGrupos();
 
-    if (grupoId()) {
+    if (esSupergrupo()) {
+      await actualizarSupergrupo();
+    } else if (grupoId()) {
       await actualizarTodo();
     } else {
-      await cargarOverview();
       clearStatsLoading();
     }
+
+    actualizarModoSupergrupo();
+
   } catch (e) {
     console.error(e);
+
     alert(
       "No se pudieron cargar los datos. Revisá la conexión e intentá nuevamente."
     );
   } finally {
     setLoading(false);
 
-    // Seguridad adicional: el loader nunca debe quedar visible
-    // después de finalizar el arranque inicial.
     const loader = $("appLoading");
     if (loader) loader.hidden = true;
   }

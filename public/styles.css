@@ -2292,3 +2292,65 @@ main,
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ===== V11.1: Supergrupo virtual ===== */
+
+.archived-groups-action {
+  color: rgba(255,255,255,.85) !important;
+  border-color: rgba(255,255,255,.22) !important;
+}
+
+.group-danger-action {
+  white-space: nowrap;
+}
+
+.group-danger-action.oculto {
+  display: none !important;
+}
+
+.archived-group-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.archived-group-row:last-child {
+  border-bottom: 0;
+}
+
+@media(max-width:700px) {
+  .group-selector {
+    grid-template-columns: minmax(0,1fr) auto !important;
+  }
+
+  #btnNuevoGrupo,
+  #btnArchivarGrupo,
+  #btnGruposArchivados {
+    font-size: 10px;
+  }
+
+  #btnArchivarGrupo,
+  #btnGruposArchivados {
+    grid-column: auto;
+  }
+}
+
+@media(max-width:450px) {
+  .group-selector {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .group-selector > div {
+    grid-column: 1 / -1;
+  }
+
+  #btnNuevoGrupo,
+  #btnArchivarGrupo,
+  #btnGruposArchivados {
+    width: 100%;
+  }
+}
