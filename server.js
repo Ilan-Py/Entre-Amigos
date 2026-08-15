@@ -12,15 +12,25 @@ const nombreCompleto = p => [p.nombre, p.apellido].filter(Boolean).join(" ");
 
 // ---------- GRUPOS ----------
 
-app.get("/api/grupos", async (_, res) => {
+app.get("/api/grupos", async (req, res) => {
+  const incluirArchivados =
+    String(req.query.incluir_archivados || "false") === "true";
+
   try {
     const [rows] = await db.query(`
-      SELECT g.id, g.nombre, COUNT(gp.persona_id) AS integrantes
+      SELECT
+        g.id,
+        g.nombre,
+        g.activo,
+        g.archived_at,
+        COUNT(CASE WHEN gp.activo = TRUE THEN gp.persona_id END) AS integrantes
       FROM grupos g
       LEFT JOIN grupo_persona gp ON gp.grupo_id = g.id
-      GROUP BY g.id, g.nombre
-      ORDER BY g.nombre
+      ${incluirArchivados ? "" : "WHERE g.activo = TRUE"}
+      GROUP BY g.id, g.nombre, g.activo, g.archived_at
+      ORDER BY g.activo DESC, g.nombre
     `);
+
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -41,6 +51,125 @@ app.post("/api/grupos", async (req, res) => {
     if (e.code === "23505")
       return res.status(400).json({ error: "Ya existe un grupo con ese nombre." });
 
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+app.post("/api/grupos/:id/archivar", async (req, res) => {
+  const grupoId = Number(req.params.id);
+
+  try {
+    const balances = await obtenerBalances({ grupoId });
+    const pendientes = balances.filter(
+      p => Math.abs(p.saldoCentavos) > 0
+    );
+
+    if (pendientes.length) {
+      return res.status(400).json({
+        error: "No se puede archivar el grupo porque todavía tiene saldos pendientes.",
+        pendientes: pendientes.map(p => ({
+          persona_id: p.id,
+          nombre: p.nombre,
+          saldo: p.saldo
+        }))
+      });
+    }
+
+    await db.query(`
+      UPDATE grupos
+      SET activo = FALSE,
+          archived_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [grupoId]);
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/grupos/:id/restaurar", async (req, res) => {
+  try {
+    await db.query(`
+      UPDATE grupos
+      SET activo = TRUE,
+          archived_at = NULL
+      WHERE id = ?
+    `, [Number(req.params.id)]);
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/overview", async (_, res) => {
+  try {
+    const [grupos] = await db.query(`
+      SELECT id, nombre, activo, archived_at
+      FROM grupos
+      ORDER BY activo DESC, nombre
+    `);
+
+    const resultado = [];
+
+    for (const g of grupos) {
+      const balances = await obtenerBalances({ grupoId: g.id });
+      const deudas = calcularDeudas(balances);
+
+      const [[stats]] = await db.query(`
+        SELECT
+          (
+            SELECT COUNT(*)
+            FROM grupo_persona
+            WHERE grupo_id = ?
+              AND activo = TRUE
+          ) AS personas,
+          (
+            SELECT COUNT(*)
+            FROM eventos
+            WHERE grupo_id = ?
+          ) AS eventos,
+          (
+            SELECT COALESCE(SUM(pe.monto),0)
+            FROM pagos_evento pe
+            JOIN eventos e ON e.id = pe.evento_id
+            WHERE e.grupo_id = ?
+          ) AS gasto_total
+      `, [g.id, g.id, g.id]);
+
+      resultado.push({
+        id: g.id,
+        nombre: g.nombre,
+        activo: g.activo,
+        archived_at: g.archived_at,
+        personas: Number(stats.personas || 0),
+        eventos: Number(stats.eventos || 0),
+        gasto_total: Number(stats.gasto_total || 0),
+        total_pendiente: deudas.reduce((s,d) => s + Number(d.monto), 0),
+        transferencias_pendientes: deudas.length,
+        balances: balances.map(b => ({
+          id: b.id,
+          nombre: b.nombre,
+          saldo: b.saldo
+        }))
+      });
+    }
+
+    const activos = resultado.filter(g => g.activo);
+
+    res.json({
+      grupos: resultado,
+      resumen: {
+        grupos_activos: activos.length,
+        grupos_archivados: resultado.filter(g => !g.activo).length,
+        gasto_total: activos.reduce((s,g) => s + g.gasto_total, 0),
+        total_pendiente: activos.reduce((s,g) => s + g.total_pendiente, 0),
+        eventos: activos.reduce((s,g) => s + g.eventos, 0)
+      }
+    });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });

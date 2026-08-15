@@ -1,4 +1,5 @@
 let grupos = [];
+let todosGrupos = [];
 let personas = [];
 let todasPersonas = [];
 let directorioPersonas = [];
@@ -132,7 +133,10 @@ document.querySelectorAll(".tab").forEach(btn => {
 // ---------- GRUPOS ----------
 
 async function cargarGrupos() {
-  grupos = await api("/api/grupos");
+  [grupos, todosGrupos] = await Promise.all([
+    api("/api/grupos"),
+    api("/api/grupos?incluir_archivados=true")
+  ]);
 
   $("grupoActual").innerHTML = grupos.map(g =>
     `<option value="${g.id}">${g.nombre}</option>`
@@ -142,8 +146,12 @@ async function cargarGrupos() {
 
   const guardado = Number(localStorage.getItem("grupo_actual"));
 
-  if (grupos.some(g => g.id === guardado))
+  if (grupos.some(g => g.id === guardado)) {
     $("grupoActual").value = guardado;
+  } else {
+    $("grupoActual").value = grupos[0].id;
+    localStorage.setItem("grupo_actual", grupos[0].id);
+  }
 }
 
 $("grupoActual").addEventListener("change", async () => {
@@ -189,6 +197,182 @@ $("btnNuevoGrupo").addEventListener("click", async () => {
     alert(e.message);
   }
 });
+
+
+$("btnArchivarGrupo")?.addEventListener("click", async () => {
+  if (!grupoId()) return;
+
+  if (!confirm(
+    `¿Archivar "${grupoNombre()}"?\n\n` +
+    `El grupo desaparecerá de la vista normal, pero todo su historial se conservará.`
+  )) return;
+
+  try {
+    await api(`/api/grupos/${grupoId()}/archivar`, {
+      method: "POST"
+    });
+
+    toast("Grupo archivado");
+    localStorage.removeItem("grupo_actual");
+
+    await cargarGrupos();
+
+    if (grupoId()) {
+      await actualizarTodo();
+    } else {
+      await cargarOverview();
+      abrirTab("overview");
+    }
+  } catch (e) {
+    if (e.data?.pendientes?.length) {
+      const detalle = e.data.pendientes.map(p => {
+        return p.saldo > 0
+          ? `• ${p.nombre}: debe recibir ${moneda(p.saldo)}`
+          : `• ${p.nombre}: debe pagar ${moneda(-p.saldo)}`;
+      }).join("\n");
+
+      alert(`${e.message}\n\n${detalle}`);
+      return;
+    }
+
+    alert(e.message);
+  }
+});
+
+async function restaurarGrupo(id) {
+  try {
+    await api(`/api/grupos/${id}/restaurar`, { method: "POST" });
+
+    await cargarGrupos();
+
+    $("grupoActual").value = id;
+    localStorage.setItem("grupo_actual", id);
+
+    await actualizarTodo();
+    cerrarModal();
+    abrirTab("resumen");
+    toast("Grupo restaurado");
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+$("btnVerArchivados")?.addEventListener("click", () => {
+  const archivados = todosGrupos.filter(g => !g.activo);
+
+  $("modalContenido").innerHTML = `
+    <h2>Grupos archivados</h2>
+    <p class="muted">
+      El historial se conserva completo y podés restaurarlos cuando quieras.
+    </p>
+
+    ${
+      archivados.length
+        ? archivados.map(g => `
+            <div class="archived-group-row">
+              <div>
+                <b>${g.nombre}</b>
+                <div class="muted">Archivado</div>
+              </div>
+              <button type="button" onclick="restaurarGrupo(${g.id})">
+                Restaurar
+              </button>
+            </div>
+          `).join("")
+        : `<p class="muted">No hay grupos archivados.</p>`
+    }
+  `;
+
+  $("modal").classList.remove("oculto");
+});
+
+async function cargarOverview() {
+  const data = await api("/api/overview");
+
+  $("overviewGrupos").textContent = data.resumen.grupos_activos;
+  $("overviewGasto").textContent = moneda(data.resumen.gasto_total);
+  $("overviewPendiente").textContent = moneda(data.resumen.total_pendiente);
+  $("overviewEventos").textContent = data.resumen.eventos;
+
+  const activos = data.grupos.filter(g => g.activo);
+
+  $("overviewLista").innerHTML = activos.length
+    ? activos.map(g => {
+        const pendientes = g.balances.filter(
+          b => Math.abs(Number(b.saldo)) > 0.01
+        );
+
+        return `
+          <article class="card overview-group-card">
+            <div class="overview-group-head">
+              <div>
+                <h3>${g.nombre}</h3>
+                <div class="muted">
+                  ${g.personas} integrantes · ${g.eventos} eventos
+                </div>
+              </div>
+
+              <button type="button" onclick="abrirGrupoDesdeOverview(${g.id})">
+                Abrir grupo
+              </button>
+            </div>
+
+            <div class="overview-group-numbers">
+              <div>
+                <span>Gasto total</span>
+                <b>${moneda(g.gasto_total)}</b>
+              </div>
+              <div>
+                <span>Pendiente</span>
+                <b>${moneda(g.total_pendiente)}</b>
+              </div>
+              <div>
+                <span>Transferencias</span>
+                <b>${g.transferencias_pendientes}</b>
+              </div>
+            </div>
+
+            ${
+              pendientes.length
+                ? `
+                  <div class="overview-balance-list">
+                    ${pendientes.map(p => `
+                      <span class="${
+                        p.saldo > 0
+                          ? "overview-positive"
+                          : "overview-negative"
+                      }">
+                        ${p.nombre}:
+                        ${
+                          p.saldo > 0
+                            ? `+${moneda(p.saldo)}`
+                            : `−${moneda(-p.saldo)}`
+                        }
+                      </span>
+                    `).join("")}
+                  </div>
+                `
+                : `<div class="overview-settled">Todo saldado</div>`
+            }
+          </article>
+        `;
+      }).join("")
+    : `<article class="card"><p class="muted">Todavía no hay grupos activos.</p></article>`;
+}
+
+async function abrirGrupoDesdeOverview(id) {
+  $("grupoActual").value = id;
+  localStorage.setItem("grupo_actual", id);
+
+  setLoading(true, "Abriendo grupo", "Actualizando gastos y saldos...");
+
+  try {
+    await actualizarTodo();
+    abrirTab("resumen");
+  } finally {
+    setLoading(false);
+  }
+}
 
 // ---------- PERSONAS ----------
 
@@ -351,8 +535,10 @@ $("btnPrimerGasto")?.addEventListener("click", () => {
 
 function renderDirectorio(filtro = "") {
   const q = String(filtro || "").trim().toLowerCase();
+  const soloDuplicados = $("soloDuplicados")?.checked === true;
 
   const rows = directorioPersonas.filter(p => {
+    if (soloDuplicados && !p.posible_duplicado) return false;
     const texto = [
       p.nombre,
       p.apellido,
@@ -429,6 +615,10 @@ $("buscarDirectorio")?.addEventListener("input", e => {
   timerDirectorio = setTimeout(() => {
     renderDirectorio(e.target.value);
   }, 180);
+});
+
+$("soloDuplicados")?.addEventListener("change", () => {
+  renderDirectorio($("buscarDirectorio")?.value || "");
 });
 
 $("btnAgregarExistente").addEventListener("click", async () => {
@@ -1425,6 +1615,7 @@ async function actualizarTodo() {
   ]);
 
   await generarInforme();
+  await cargarOverview();
   clearStatsLoading();
 }
 
@@ -1443,6 +1634,7 @@ $("informeHasta").value = finMesActual();
     if (grupoId()) {
       await actualizarTodo();
     } else {
+      await cargarOverview();
       clearStatsLoading();
     }
   } catch (e) {

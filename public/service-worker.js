@@ -1,4 +1,4 @@
-const CACHE_NAME = "entre-amigos-v10-1";
+const CACHE_NAME = "entre-amigos-v11";
 
 const ARCHIVOS_APP = [
   "/",
