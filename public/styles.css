@@ -1669,3 +1669,451 @@ hr {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =========================================================
+   V10.1 — Correcciones UX
+   ========================================================= */
+
+/* El atributo hidden manda siempre sobre cualquier display previo. */
+[hidden],
+.app-loading[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+main,
+.panel,
+.card,
+.dos-columnas,
+.form-grid,
+.toolbar,
+.card-title-row {
+  min-width: 0;
+}
+
+/* ---------- Personas ---------- */
+
+.people-entry-card {
+  padding: 20px;
+}
+
+.person-option {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 13px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #fff;
+}
+
+.person-option-primary {
+  border-color: #c8ddd8;
+  background:
+    linear-gradient(180deg, #fbfefd 0%, #f5faf8 100%);
+}
+
+.person-option-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.person-option-icon.secondary {
+  background: #e9edef;
+  color: #55616a;
+}
+
+.person-option-content {
+  min-width: 0;
+}
+
+.person-option-content h2 {
+  margin: 3px 0 4px;
+  font-size: 17px;
+}
+
+.existing-person-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.existing-person-form select {
+  margin: 0;
+}
+
+.existing-person-form .primary {
+  white-space: nowrap;
+}
+
+.person-option-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 15px 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.person-option-separator::before,
+.person-option-separator::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.new-person-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 11px 14px;
+  color: var(--primary);
+  background: white;
+  border: 1.5px solid #a9c9c3;
+}
+
+.new-person-button:hover,
+.new-person-button.activo {
+  background: var(--soft-primary);
+  border-color: var(--primary);
+}
+
+.new-person-plus {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.new-person-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------- Mobile rework ---------- */
+
+@media (max-width: 700px) {
+  :root {
+    --mobile-pad: 12px;
+  }
+
+  html,
+  body {
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  }
+
+  .wrap {
+    width: 100%;
+    max-width: 100%;
+    padding-left: var(--mobile-pad);
+    padding-right: var(--mobile-pad);
+  }
+
+  /* Header como bloque compacto de app */
+  .topbar {
+    position: relative;
+  }
+
+  .topbar-inner {
+    width: 100%;
+    padding: 12px var(--mobile-pad);
+    margin: 0;
+  }
+
+  .brand {
+    gap: 9px;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .brand h1 {
+    font-size: 18px;
+  }
+
+  .group-selector {
+    grid-template-columns: minmax(0,1fr) auto;
+    width: 100%;
+  }
+
+  .group-selector select {
+    width: 100%;
+  }
+
+  /* KPIs: compactos y sin texto gigante */
+  .stats {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 8px;
+    margin: 12px 0;
+  }
+
+  .stat {
+    width: 100%;
+    min-height: 82px;
+    padding: 12px;
+  }
+
+  .stat span {
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .stat b {
+    font-size: 18px;
+    line-height: 1.15;
+    letter-spacing: -.02em;
+  }
+
+  /* Contenido nunca puede superar viewport */
+  .panel,
+  .card,
+  .dos-columnas,
+  .form-grid,
+  .balance,
+  .debt,
+  .person-card,
+  .directory-row,
+  .movement {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .card {
+    padding: 15px;
+    margin: 0;
+  }
+
+  .card h2 {
+    font-size: 17px;
+    line-height: 1.25;
+  }
+
+  .muted {
+    font-size: 12px;
+  }
+
+  /* Navegación inferior: todos los tabs accesibles y no aplastados */
+  .tabs {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(76px, 1fr);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .tabs button {
+    min-width: 76px;
+    width: auto;
+    padding: 9px 6px;
+    font-size: 10.5px;
+  }
+
+  /* Formularios */
+  .form-grid {
+    display: block;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    max-width: 100%;
+    font-size: 16px;
+  }
+
+  .chips {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 7px;
+  }
+
+  .chip {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 9px;
+    overflow-wrap: anywhere;
+  }
+
+  .money-row {
+    grid-template-columns: minmax(0,1fr) 112px;
+    width: 100%;
+  }
+
+  .money-row > * {
+    min-width: 0;
+  }
+
+  .section-heading-row {
+    width: 100%;
+  }
+
+  .mini-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Personas */
+  .people-entry-card {
+    padding: 14px;
+  }
+
+  .person-option {
+    grid-template-columns: 28px minmax(0,1fr);
+    gap: 10px;
+    padding: 14px 12px;
+  }
+
+  .person-option-icon {
+    width: 27px;
+    height: 27px;
+  }
+
+  .person-option-content h2 {
+    font-size: 16px;
+  }
+
+  .existing-person-form {
+    grid-template-columns: 1fr;
+  }
+
+  .existing-person-form .primary {
+    width: 100%;
+  }
+
+  .form-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Resumen */
+  .card-title-row {
+    display: block;
+  }
+
+  .card-title-row .secondary-action {
+    margin-top: 10px;
+  }
+
+  .balance-head {
+    display: block;
+  }
+
+  .balance-head > b {
+    display: block;
+    margin-top: 4px;
+    font-size: 13px;
+  }
+
+  .balance-equation {
+    overflow-wrap: anywhere;
+  }
+
+  /* Informes: sin tabla diminuta */
+  #contenidoInforme table {
+    display: table;
+    table-layout: fixed;
+    white-space: normal;
+    font-size: 11px;
+  }
+
+  #contenidoInforme th,
+  #contenidoInforme td {
+    padding: 7px 5px;
+    overflow-wrap: anywhere;
+  }
+
+  /* Ocultar columnas contables secundarias en celular;
+     el estado principal sigue visible y el informe impreso conserva todo. */
+  #contenidoInforme th:nth-child(4),
+  #contenidoInforme td:nth-child(4),
+  #contenidoInforme th:nth-child(5),
+  #contenidoInforme td:nth-child(5) {
+    display: none;
+  }
+
+  .report-debt-row {
+    padding: 11px;
+  }
+
+  /* Modal como sheet real */
+  .modal {
+    display: flex;
+    align-items: flex-end;
+    justify-content: stretch;
+  }
+
+  .modal-card {
+    max-width: none;
+    max-height: 90dvh;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 390px) {
+  .stats {
+    gap: 6px;
+  }
+
+  .stat {
+    min-height: 76px;
+    padding: 10px;
+  }
+
+  .stat b {
+    font-size: 16px;
+  }
+
+  .chips {
+    grid-template-columns: 1fr;
+  }
+
+  .money-row {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions {
+    grid-template-columns: 1fr;
+  }
+}

@@ -60,22 +60,23 @@ function toast(msg) {
 }
 
 
-let loadingDepth = 0;
+function setLoading(
+  activo,
+  titulo = "Cargando Entre Amigos",
+  texto = "Buscando los datos del grupo..."
+) {
+  const loader = $("appLoading");
 
-function setLoading(activo, titulo = "Cargando Entre Amigos", texto = "Buscando los datos del grupo...") {
+  if (!loader) return;
+
   if (activo) {
-    loadingDepth++;
     $("loadingTitle").textContent = titulo;
     $("loadingText").textContent = texto;
-    $("appLoading").classList.remove("oculto");
+
+    loader.hidden = false;
     document.body.classList.add("is-loading");
-    return;
-  }
-
-  loadingDepth = Math.max(0, loadingDepth - 1);
-
-  if (loadingDepth === 0) {
-    $("appLoading").classList.add("oculto");
+  } else {
+    loader.hidden = true;
     document.body.classList.remove("is-loading");
   }
 }
@@ -519,6 +520,32 @@ function editarPersona(id) {
   });
 }
 
+
+function mostrarFormularioNuevaPersona(mostrar) {
+  const form = $("formPersona");
+  const boton = $("btnMostrarNuevaPersona");
+
+  form.classList.toggle("oculto", !mostrar);
+  boton.setAttribute("aria-expanded", String(mostrar));
+
+  if (mostrar) {
+    boton.classList.add("activo");
+    setTimeout(() => $("nombrePersona")?.focus(), 50);
+  } else {
+    boton.classList.remove("activo");
+    form.reset();
+  }
+}
+
+$("btnMostrarNuevaPersona")?.addEventListener("click", () => {
+  const estaOculto = $("formPersona").classList.contains("oculto");
+  mostrarFormularioNuevaPersona(estaOculto);
+});
+
+$("btnCancelarNuevaPersona")?.addEventListener("click", () => {
+  mostrarFormularioNuevaPersona(false);
+});
+
 $("formPersona").addEventListener("submit", async e => {
   e.preventDefault();
 
@@ -536,7 +563,7 @@ $("formPersona").addEventListener("submit", async e => {
       body: JSON.stringify(payload)
     });
 
-    $("formPersona").reset();
+    mostrarFormularioNuevaPersona(false);
     await actualizarTodo();
     toast("Persona agregada");
 
@@ -566,7 +593,7 @@ $("formPersona").addEventListener("submit", async e => {
           });
         }
 
-        $("formPersona").reset();
+        mostrarFormularioNuevaPersona(false);
         await actualizarTodo();
 
         toast(
@@ -1425,6 +1452,11 @@ $("informeHasta").value = finMesActual();
     );
   } finally {
     setLoading(false);
+
+    // Seguridad adicional: el loader nunca debe quedar visible
+    // después de finalizar el arranque inicial.
+    const loader = $("appLoading");
+    if (loader) loader.hidden = true;
   }
 })();
 

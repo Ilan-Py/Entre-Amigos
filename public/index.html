@@ -215,54 +215,88 @@
       <article class="card people-entry-card">
         <div id="onboardingGrupo" class="onboarding-box oculto">
           <div class="onboarding-step">Nuevo grupo</div>
-          <h2>Primero agregá a las personas</h2>
+          <h2>Agregá los integrantes</h2>
           <p class="muted">
-            Reutilizá contactos existentes siempre que puedas. Así evitás duplicados
-            y mantenés un único teléfono y alias por persona.
+            Primero buscá si la persona ya existe. Así evitás crear contactos duplicados.
           </p>
         </div>
 
-        <div class="existing-person-highlight">
-          <div class="eyebrow">Recomendado</div>
-          <h2>Agregar una persona existente</h2>
-          <p class="muted">
-            Elegí a alguien que ya exista en tu directorio general.
-          </p>
+        <section class="person-option person-option-primary">
+          <div class="person-option-icon">1</div>
 
-          <div class="inline-form existing-person-form">
-            <select id="personaExistente"></select>
-            <button id="btnAgregarExistente" type="button" class="primary">Agregar</button>
-          </div>
-        </div>
+          <div class="person-option-content">
+            <div class="eyebrow">Opción recomendada</div>
+            <h2>Agregar una persona existente</h2>
+            <p class="muted">
+              Reutilizá un contacto de tu directorio general.
+            </p>
 
-        <div class="divider-with-text"><span>o crear una nueva</span></div>
-
-        <details class="new-person-details">
-          <summary>Nueva persona</summary>
-
-          <form id="formPersona">
-            <div class="form-grid">
-              <label>
-                Nombre *
-                <input id="nombrePersona" required>
-              </label>
-              <label>
-                Apellido
-                <input id="apellidoPersona">
-              </label>
-              <label>
-                Teléfono
-                <input id="telefonoPersona">
-              </label>
-              <label>
-                Alias bancario
-                <input id="aliasPersona" placeholder="ejemplo.alias">
-              </label>
+            <div class="existing-person-form">
+              <select id="personaExistente" aria-label="Persona existente"></select>
+              <button id="btnAgregarExistente" type="button" class="primary">
+                Agregar al grupo
+              </button>
             </div>
+          </div>
+        </section>
 
-            <button class="primary">Crear y agregar al grupo</button>
-          </form>
-        </details>
+        <div class="person-option-separator">
+          <span>¿No está en tu directorio?</span>
+        </div>
+
+        <section class="person-option">
+          <div class="person-option-icon secondary">2</div>
+
+          <div class="person-option-content">
+            <h2>Crear una nueva persona</h2>
+            <p class="muted">
+              Usá esta opción solamente si todavía no existe.
+            </p>
+
+            <button
+              id="btnMostrarNuevaPersona"
+              type="button"
+              class="new-person-button"
+              aria-expanded="false"
+            >
+              <span class="new-person-plus">+</span>
+              Nueva persona
+            </button>
+
+            <form id="formPersona" class="new-person-form oculto">
+              <div class="form-grid">
+                <label>
+                  Nombre *
+                  <input id="nombrePersona" required>
+                </label>
+
+                <label>
+                  Apellido
+                  <input id="apellidoPersona">
+                </label>
+
+                <label>
+                  Teléfono
+                  <input id="telefonoPersona">
+                </label>
+
+                <label>
+                  Alias bancario
+                  <input id="aliasPersona" placeholder="ejemplo.alias">
+                </label>
+              </div>
+
+              <div class="form-actions">
+                <button id="btnCancelarNuevaPersona" type="button">
+                  Cancelar
+                </button>
+                <button class="primary">
+                  Crear y agregar
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
 
         <div id="onboardingContinuar" class="onboarding-continue oculto">
           <button id="btnPrimerGasto" type="button" class="primary">
@@ -352,7 +386,7 @@
   </section>
 </main>
 
-<div id="appLoading" class="app-loading">
+<div id="appLoading" class="app-loading" hidden>
   <div class="loading-card">
     <div class="spinner"></div>
     <div>
