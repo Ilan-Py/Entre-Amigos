@@ -32,8 +32,11 @@ app.post("/api/grupos", async (req, res) => {
   if (!nombre) return res.status(400).json({ error: "Ingrese un nombre para el grupo." });
 
   try {
-    const [r] = await db.query("INSERT INTO grupos(nombre) VALUES (?)", [nombre]);
-    res.status(201).json({ id: r.insertId, nombre });
+    const [r] = await db.query(
+      "INSERT INTO grupos(nombre) VALUES (?) RETURNING id",
+      [nombre]
+    );
+    res.status(201).json({ id: r[0].id, nombre });
   } catch (e) {
     if (e.code === "ER_DUP_ENTRY")
       return res.status(400).json({ error: "Ya existe un grupo con ese nombre." });
@@ -54,7 +57,7 @@ app.get("/api/personas", async (req, res) => {
         FROM personas p
         JOIN grupo_persona gp ON gp.persona_id = p.id
         WHERE gp.grupo_id = ?
-          AND gp.activo = 1
+          AND gp.activo = TRUE
         ORDER BY p.nombre, p.apellido
       `, [grupoId]);
       return res.json(rows);
@@ -137,6 +140,7 @@ app.post("/api/personas", async (req, res) => {
       const [r] = await conn.query(`
         INSERT INTO personas(nombre, apellido, telefono, alias_bancario)
         VALUES (?, ?, ?, ?)
+        RETURNING id
       `, [
         n,
         a || null,
@@ -148,12 +152,12 @@ app.post("/api/personas", async (req, res) => {
         await conn.query(`
           INSERT INTO grupo_persona(grupo_id, persona_id, activo)
           VALUES (?, ?, 1)
-          ON DUPLICATE KEY UPDATE activo = 1
-        `, [grupo_id, r.insertId]);
+          ON DUPLICATE KEY UPDATE activo = TRUE
+        `, [grupo_id, r[0].id]);
       }
 
       await conn.commit();
-      res.status(201).json({ id: r.insertId });
+      res.status(201).json({ id: r[0].id });
 
     } catch (e) {
       await conn.rollback();
@@ -209,8 +213,9 @@ app.post("/api/grupos/:grupoId/personas/:personaId", async (req, res) => {
   try {
     await db.query(`
       INSERT INTO grupo_persona(grupo_id, persona_id, activo)
-      VALUES (?, ?, 1)
-      ON DUPLICATE KEY UPDATE activo = 1
+      VALUES (?, ?, TRUE)
+      ON CONFLICT (grupo_id, persona_id)
+      DO UPDATE SET activo = TRUE
     `, [req.params.grupoId, req.params.personaId]);
 
     res.json({ ok: true });
@@ -238,7 +243,7 @@ app.delete("/api/grupos/:grupoId/personas/:personaId", async (req, res) => {
 
     await db.query(`
       UPDATE grupo_persona
-      SET activo = 0
+      SET activo = FALSE
       WHERE grupo_id = ?
         AND persona_id = ?
     `, [grupoId, personaId]);
@@ -260,13 +265,13 @@ app.get("/api/directorio-personas", async (_, res) => {
         p.apellido,
         p.telefono,
         p.alias_bancario,
-        GROUP_CONCAT(
-          DISTINCT CASE WHEN gp.activo = 1 THEN g.nombre END
-          ORDER BY g.nombre SEPARATOR ', '
+        STRING_AGG(
+          DISTINCT CASE WHEN gp.activo = TRUE THEN g.nombre END,
+          ', ' ORDER BY CASE WHEN gp.activo = TRUE THEN g.nombre END
         ) AS grupos_activos,
-        GROUP_CONCAT(
-          DISTINCT CASE WHEN gp.activo = 0 THEN g.nombre END
-          ORDER BY g.nombre SEPARATOR ', '
+        STRING_AGG(
+          DISTINCT CASE WHEN gp.activo = FALSE THEN g.nombre END,
+          ', ' ORDER BY CASE WHEN gp.activo = FALSE THEN g.nombre END
         ) AS grupos_ocultos
       FROM personas p
       LEFT JOIN grupo_persona gp ON gp.persona_id = p.id
@@ -381,20 +386,21 @@ app.post("/api/eventos", async (req, res) => {
     const [evento] = await conn.query(`
       INSERT INTO eventos(grupo_id, descripcion, fecha)
       VALUES (?, ?, ?)
+      RETURNING id
     `, [grupo_id, descripcion.trim(), fecha]);
 
     for (const p of participantesFinales) {
       await conn.query(`
         INSERT INTO participantes(evento_id, persona_id, monto_asignado)
         VALUES (?, ?, ?)
-      `, [evento.insertId, p.persona_id, aPesos(p.centavos_asignados)]);
+      `, [evento[0].id, p.persona_id, aPesos(p.centavos_asignados)]);
     }
 
     for (const p of pagosValidos) {
       await conn.query(`
         INSERT INTO pagos_evento(evento_id, persona_id, monto)
         VALUES (?, ?, ?)
-      `, [evento.insertId, p.persona_id, aPesos(p.centavos)]);
+      `, [evento[0].id, p.persona_id, aPesos(p.centavos)]);
     }
 
     await conn.commit();
@@ -548,7 +554,7 @@ async function obtenerBalances({ grupoId, desde = null, hasta = null }) {
     JOIN grupo_persona gp
       ON gp.persona_id = p.id
      AND gp.grupo_id = ?
-     AND gp.activo = 1
+     AND gp.activo = TRUE
     LEFT JOIN (
       SELECT pe.persona_id, pe.monto
       FROM pagos_evento pe
@@ -925,7 +931,7 @@ app.get("/api/resumen", async (req, res) => {
           SELECT COUNT(*)
           FROM grupo_persona
           WHERE grupo_id = ?
-            AND activo = 1
+            AND activo = TRUE
         ) AS personas,
 
         (
@@ -980,7 +986,7 @@ app.get("/api/movimientos", async (req, res) => {
       FROM eventos e
       LEFT JOIN pagos_evento pe ON pe.evento_id = e.id
       WHERE e.grupo_id = ?
-        ${q ? "AND e.descripcion LIKE ?" : ""}
+        ${q ? "AND e.descripcion ILIKE ?" : ""}
       GROUP BY e.id, e.fecha, e.descripcion
     `, q ? [grupoId, like] : [grupoId]);
 
@@ -991,18 +997,18 @@ app.get("/api/movimientos", async (req, res) => {
         pd.descripcion,
         pd.monto,
         'Pago' AS tipo,
-        CONCAT(d.nombre, IF(d.apellido IS NULL OR d.apellido='', '', CONCAT(' ',d.apellido))) AS deudor,
-        CONCAT(a.nombre, IF(a.apellido IS NULL OR a.apellido='', '', CONCAT(' ',a.apellido))) AS acreedor
+        CONCAT_WS(' ', d.nombre, NULLIF(d.apellido,'')) AS deudor,
+        CONCAT_WS(' ', a.nombre, NULLIF(a.apellido,'')) AS acreedor
       FROM pagos_deuda pd
       JOIN personas d ON d.id = pd.deudor_id
       JOIN personas a ON a.id = pd.acreedor_id
       WHERE pd.grupo_id = ?
         ${q ? `AND (
-          pd.descripcion LIKE ?
-          OR d.nombre LIKE ?
-          OR d.apellido LIKE ?
-          OR a.nombre LIKE ?
-          OR a.apellido LIKE ?
+          pd.descripcion ILIKE ?
+          OR d.nombre ILIKE ?
+          OR d.apellido ILIKE ?
+          OR a.nombre ILIKE ?
+          OR a.apellido ILIKE ?
         )` : ""}
     `, q
       ? [grupoId, like, like, like, like, like]
@@ -1020,6 +1026,12 @@ app.get("/api/movimientos", async (req, res) => {
   }
 });
 
-app.listen(3000, () => {
-  console.log("Entre Amigos v6: http://localhost:3000");
-});
+const PORT = process.env.PORT || 3000;
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Entre Amigos: http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

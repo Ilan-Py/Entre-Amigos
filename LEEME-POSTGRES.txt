@@ -1,0 +1,34 @@
+ENTRE AMIGOS - MIGRACIÓN A POSTGRESQL / NEON
+
+Archivos preparados:
+- db.js
+- package.json
+- server.js
+- schema-postgres.sql
+- .env.example
+- .gitignore
+- vercel.json
+
+IMPORTANTE
+
+1. NO ejecutes schema-postgres.sql sobre tu MariaDB.
+   Ese archivo es solamente para la nueva base PostgreSQL/Neon.
+
+2. La nueva conexión usa:
+   process.env.DATABASE_URL
+
+3. Cuando Neon te entregue la URL de conexión:
+   - localmente podés copiar .env.example como .env;
+   - en Vercel se configura como Environment Variable.
+
+4. Antes de subir:
+   npm install
+
+5. En Neon:
+   ejecutá schema-postgres.sql una única vez en el SQL Editor.
+
+6. Después configuramos DATABASE_URL en Vercel.
+
+NOTA:
+Esta migración mantiene la lógica de la aplicación actual y adapta las consultas
+propias de MariaDB/MySQL a PostgreSQL.
