@@ -137,14 +137,14 @@ document.querySelectorAll(".tab").forEach(btn => {
     abrirTab(btn.dataset.tab);
 
     if (
-      btn.dataset.tab === "personas" &&
+      btn.dataset.tab === "directorio" &&
       esSupergrupo()
     ) {
       try {
         directorioPersonas =
           await api("/api/directorio-personas");
 
-        renderDirectorio();
+        renderDirectorioMaster();
       } catch (e) {
         console.error(e);
         alert("No se pudo cargar el directorio de personas.");
@@ -188,16 +188,6 @@ $("grupoActual").addEventListener("change", async () => {
 
   actualizarModoSupergrupo();
 
-  if (
-    esSupergrupo() &&
-    document.querySelector(".panel.activo")?.id === "personas"
-  ) {
-    directorioPersonas =
-      await api("/api/directorio-personas");
-
-    renderDirectorio();
-  }
-
   setStatsLoading();
 
   setLoading(
@@ -213,6 +203,9 @@ $("grupoActual").addEventListener("change", async () => {
   try {
     if (esSupergrupo()) {
       await actualizarSupergrupo();
+      renderDirectorioMaster(
+        $("buscarDirectorioMaster")?.value || ""
+      );
     } else {
       await actualizarTodo();
     }
@@ -259,10 +252,7 @@ $("btnNuevoGrupo").addEventListener("click", async () => {
 function actualizarModoSupergrupo() {
   const supergrupo = esSupergrupo();
 
-  $("btnArchivarGrupo")?.classList.toggle(
-    "oculto",
-    supergrupo
-  );
+  $("btnArchivarGrupo")?.classList.toggle("oculto", supergrupo);
 
   document.querySelector('.tab[data-tab="gasto"]')
     ?.classList.toggle("oculto", supergrupo);
@@ -270,54 +260,110 @@ function actualizarModoSupergrupo() {
   document.querySelector('.tab[data-tab="pago"]')
     ?.classList.toggle("oculto", supergrupo);
 
-  const tabPersonas = $("tabPersonas");
+  $("tabPersonas")?.classList.toggle("oculto", supergrupo);
+  $("tabDirectorio")?.classList.toggle("oculto", !supergrupo);
 
-  if (tabPersonas) {
-    tabPersonas.classList.remove("oculto");
-    tabPersonas.textContent =
-      supergrupo ? "Directorio" : "Personas";
+  const panelActivo =
+    document.querySelector(".panel.activo")?.id;
+
+  if (
+    supergrupo &&
+    ["gasto", "pago", "personas"].includes(panelActivo)
+  ) {
+    abrirTab("resumen");
   }
 
-  $("superDirectorioHeader")?.classList.toggle(
-    "oculto",
-    !supergrupo
-  );
-
-  $("personasIngresoCard")?.classList.toggle(
-    "oculto",
-    supergrupo
-  );
-
-  $("integrantesGrupoCard")?.classList.toggle(
-    "oculto",
-    supergrupo
-  );
-
-  if ($("tituloDirectorioGeneral")) {
-    $("tituloDirectorioGeneral").textContent =
-      supergrupo
-        ? "Directorio maestro"
-        : "Directorio general";
-  }
-
-  const panelPersonas = $("personas");
-
-  if (panelPersonas) {
-    panelPersonas.classList.toggle(
-      "super-directory-mode",
-      supergrupo
-    );
-  }
-
-  if (supergrupo) {
-    const activo =
-      document.querySelector(".panel.activo")?.id;
-
-    if (["gasto", "pago"].includes(activo)) {
-      abrirTab("resumen");
-    }
+  if (
+    !supergrupo &&
+    panelActivo === "directorio"
+  ) {
+    abrirTab("personas");
   }
 }
+
+
+function renderDirectorioMaster(filtro = "") {
+  const contenedor = $("directorioPersonasMaster");
+  if (!contenedor) return;
+
+  const q = String(filtro || "").trim().toLowerCase();
+  const soloDuplicados =
+    $("soloDuplicadosMaster")?.checked === true;
+
+  const rows = directorioPersonas.filter(p => {
+    if (soloDuplicados && !p.posible_duplicado) {
+      return false;
+    }
+
+    const texto = [
+      p.nombre,
+      p.apellido,
+      p.telefono,
+      p.alias_bancario,
+      p.grupos_activos
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    return !q || texto.includes(q);
+  });
+
+  contenedor.innerHTML = rows.length
+    ? rows.map(p => `
+        <div class="directory-row ${
+          p.posible_duplicado ? "possible-duplicate" : ""
+        }">
+          <div>
+            <div class="person-name">
+              ${nombreCompleto(p)}
+              ${
+                p.posible_duplicado
+                  ? `<span class="duplicate-badge">Posible duplicado</span>`
+                  : ""
+              }
+            </div>
+
+            <div class="person-meta">
+              ${p.telefono ? `Teléfono: ${p.telefono}` : "Sin teléfono"}
+              ·
+              ${p.alias_bancario ? `Alias: ${p.alias_bancario}` : "Sin alias"}
+            </div>
+
+            <div class="person-meta">
+              Grupos: ${p.grupos_activos || "ninguno"}
+            </div>
+          </div>
+
+          <div class="person-actions">
+            <button onclick="editarPersona(${p.id})">
+              Editar
+            </button>
+
+            <button
+              class="danger-soft"
+              onclick="ocultarPersonaDirectorio(${p.id})"
+            >
+              Ocultar
+            </button>
+          </div>
+        </div>
+      `).join("")
+    : `<p class="muted">No hay coincidencias.</p>`;
+}
+
+let timerDirectorioMaster;
+
+$("buscarDirectorioMaster")?.addEventListener("input", e => {
+  clearTimeout(timerDirectorioMaster);
+
+  timerDirectorioMaster = setTimeout(() => {
+    renderDirectorioMaster(e.target.value);
+  }, 180);
+});
+
+$("soloDuplicadosMaster")?.addEventListener("change", () => {
+  renderDirectorioMaster(
+    $("buscarDirectorioMaster")?.value || ""
+  );
+});
 
 async function cargarPersonasSupergrupo() {
   personas = await api("/api/supergrupo/personas");
@@ -326,7 +372,7 @@ async function cargarPersonasSupergrupo() {
 
   renderSelectsPersonas();
   actualizarModoSupergrupo();
-  renderDirectorio();
+  renderDirectorioMaster();
 }
 
 async function cargarResumenSupergrupo() {
@@ -999,6 +1045,9 @@ async function ocultarPersonaDirectorio(id) {
 
     if (esSupergrupo()) {
       await actualizarSupergrupo();
+      renderDirectorioMaster(
+        $("buscarDirectorioMaster")?.value || ""
+      );
     } else {
       await actualizarTodo();
     }

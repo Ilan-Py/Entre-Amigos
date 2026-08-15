@@ -62,6 +62,7 @@
     <button class="tab" data-tab="gasto">Nuevo gasto</button>
     <button class="tab" data-tab="pago">Registrar pago</button>
     <button id="tabPersonas" class="tab" data-tab="personas">Personas</button>
+    <button id="tabDirectorio" class="tab oculto" data-tab="directorio">Directorio</button>
     <button class="tab" data-tab="movimientos">Movimientos</button>
     <button class="tab" data-tab="informe">Informes</button>
   </nav>
@@ -212,18 +213,6 @@
   </section>
 
   <section id="personas" class="panel">
-    <article id="superDirectorioHeader" class="card super-directory-header oculto">
-      <div class="toolbar">
-        <div>
-          <h2>Directorio de personas</h2>
-          <p class="muted">
-            Todas las personas activas. Podés ocultarlas del directorio
-            sin borrar su historial.
-          </p>
-        </div>
-        <button id="btnPersonasOcultas" type="button">Personas ocultas</button>
-      </div>
-    </article>
     <div class="dos-columnas">
       <article id="personasIngresoCard" class="card people-entry-card">
         <div id="onboardingGrupo" class="onboarding-box oculto">
@@ -343,6 +332,52 @@
       </div>
 
       <div id="directorioPersonas"></div>
+    </article>
+  </section>
+
+
+  <section id="directorio" class="panel">
+    <article class="card super-directory-header">
+      <div class="toolbar">
+        <div>
+          <h2>Directorio de personas</h2>
+          <p class="muted">
+            Todas las personas activas de tus grupos. Podés editar u ocultar
+            contactos sin borrar su historial.
+          </p>
+        </div>
+
+        <button id="btnPersonasOcultas" type="button">
+          Personas ocultas
+        </button>
+      </div>
+    </article>
+
+    <article class="card directory-card master-directory-card">
+      <div class="toolbar">
+        <div>
+          <h2>Todos mis amigos</h2>
+          <p class="muted">
+            Este directorio reúne una sola vez a cada persona activa,
+            sin importar en cuántos grupos participe.
+          </p>
+        </div>
+
+        <div class="directory-tools">
+          <input
+            id="buscarDirectorioMaster"
+            class="search"
+            placeholder="Buscar persona..."
+          >
+
+          <label class="directory-filter">
+            <input id="soloDuplicadosMaster" type="checkbox">
+            <span>Solo posibles duplicados</span>
+          </label>
+        </div>
+      </div>
+
+      <div id="directorioPersonasMaster"></div>
     </article>
   </section>
 

@@ -2410,3 +2410,39 @@ main,
     padding: 14px;
   }
 }
+
+
+/* ===== V11.2.2: Directorio independiente del panel Personas ===== */
+
+#directorio .super-directory-header {
+  display: block !important;
+  margin-bottom: 14px;
+}
+
+#directorio .master-directory-card {
+  margin-top: 0;
+  border-color: #cbded9;
+}
+
+#tabDirectorio.oculto,
+#tabPersonas.oculto {
+  display: none !important;
+}
+
+@media(max-width:700px) {
+  #directorio .master-directory-card {
+    padding: 14px;
+  }
+
+  #directorio .directory-tools {
+    width: 100%;
+  }
+
+  #directorio .person-actions {
+    width: 100%;
+  }
+
+  #directorio .person-actions button {
+    flex: 1;
+  }
+}
