@@ -59,6 +59,40 @@ function toast(msg) {
   setTimeout(() => $("toast").style.display = "none", 2200);
 }
 
+
+let loadingDepth = 0;
+
+function setLoading(activo, titulo = "Cargando Entre Amigos", texto = "Buscando los datos del grupo...") {
+  if (activo) {
+    loadingDepth++;
+    $("loadingTitle").textContent = titulo;
+    $("loadingText").textContent = texto;
+    $("appLoading").classList.remove("oculto");
+    document.body.classList.add("is-loading");
+    return;
+  }
+
+  loadingDepth = Math.max(0, loadingDepth - 1);
+
+  if (loadingDepth === 0) {
+    $("appLoading").classList.add("oculto");
+    document.body.classList.remove("is-loading");
+  }
+}
+
+function setStatsLoading() {
+  ["gastoTotal", "totalDeuda", "cantEventos", "cantPersonas"].forEach(id => {
+    $(id).textContent = "—";
+    $(id).classList.add("loading-value");
+  });
+}
+
+function clearStatsLoading() {
+  ["gastoTotal", "totalDeuda", "cantEventos", "cantPersonas"].forEach(id => {
+    $(id).classList.remove("loading-value");
+  });
+}
+
 async function api(url, options={}) {
   const r = await fetch(url, {
     headers: { "Content-Type": "application/json" },
@@ -113,7 +147,13 @@ async function cargarGrupos() {
 
 $("grupoActual").addEventListener("change", async () => {
   localStorage.setItem("grupo_actual", grupoId());
-  await actualizarTodo();
+  setStatsLoading();
+  setLoading(true, "Cambiando de grupo", "Actualizando saldos y movimientos...");
+  try {
+    await actualizarTodo();
+  } finally {
+    setLoading(false);
+  }
 });
 
 $("btnNuevoGrupo").addEventListener("click", async () => {
@@ -130,8 +170,19 @@ $("btnNuevoGrupo").addEventListener("click", async () => {
     $("grupoActual").value = g.id;
     localStorage.setItem("grupo_actual", g.id);
 
-    await actualizarTodo();
-    toast("Grupo creado");
+    localStorage.setItem("onboarding_grupo", String(g.id));
+
+    setStatsLoading();
+    setLoading(true, "Preparando el grupo", "Ahora agregamos a las personas...");
+    try {
+      await actualizarTodo();
+    } finally {
+      setLoading(false);
+    }
+
+    abrirTab("personas");
+    actualizarOnboardingGrupo();
+    toast("Grupo creado. Agregá a sus integrantes.");
 
   } catch (e) {
     alert(e.message);
@@ -154,6 +205,7 @@ async function cargarPersonas() {
   renderParticipantes();
   renderPersonaExistente();
   renderDirectorio();
+  actualizarOnboardingGrupo();
 }
 
 function renderListaPersonas() {
@@ -214,6 +266,43 @@ function renderParticipantes() {
   renderPagadores();
 }
 
+
+function setTodosParticipantes(marcado) {
+  document.querySelectorAll(".participante").forEach(i => {
+    i.checked = marcado;
+  });
+
+  renderPagadores();
+  renderMontosPersonalizados();
+}
+
+$("btnSeleccionarTodos")?.addEventListener("click", () => {
+  setTodosParticipantes(true);
+});
+
+$("btnDeseleccionarTodos")?.addEventListener("click", () => {
+  setTodosParticipantes(false);
+});
+
+$("categoriaGasto")?.addEventListener("change", e => {
+  const personalizada = e.target.value === "__otra__";
+  $("categoriaOtraWrap").classList.toggle("oculto", !personalizada);
+
+  if (personalizada) {
+    $("categoriaOtra").focus();
+  } else {
+    $("categoriaOtra").value = "";
+  }
+});
+
+function categoriaSeleccionada() {
+  if ($("categoriaGasto").value === "__otra__") {
+    return $("categoriaOtra").value.trim() || "Otros";
+  }
+
+  return $("categoriaGasto").value || "Otros";
+}
+
 function renderPersonaExistente() {
   const idsActuales = new Set(personas.map(p => p.id));
   const disponibles = todasPersonas.filter(p => !idsActuales.has(p.id));
@@ -225,6 +314,38 @@ function renderPersonaExistente() {
       ).join("")
     : `<option value="">No hay personas disponibles</option>`;
 }
+
+
+function actualizarOnboardingGrupo() {
+  const onboardingId =
+    Number(localStorage.getItem("onboarding_grupo") || 0);
+
+  const activo =
+    onboardingId === grupoId();
+
+  $("onboardingGrupo")?.classList.toggle("oculto", !activo);
+  $("onboardingContinuar")?.classList.toggle(
+    "oculto",
+    !(activo && personas.length > 0)
+  );
+
+  if (activo && personas.length > 0) {
+    $("onboardingGrupo").querySelector("h2").textContent =
+      personas.length === 1
+        ? "Ya agregaste 1 integrante"
+        : `Ya agregaste ${personas.length} integrantes`;
+
+    $("onboardingGrupo").querySelector(".muted").textContent =
+      "Podés seguir agregando personas o continuar al primer gasto.";
+  }
+}
+
+$("btnPrimerGasto")?.addEventListener("click", () => {
+  localStorage.removeItem("onboarding_grupo");
+  actualizarOnboardingGrupo();
+  abrirTab("gasto");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
 
 
 function renderDirectorio(filtro = "") {
@@ -881,6 +1002,7 @@ async function cargarMovimientos(q="") {
           return `
             <div class="movement clickable" onclick="verDetalleGasto(${m.id})">
               <div class="movement-title">${m.descripcion}</div>
+              <div class="movement-category">${m.categoria || "Otros"}</div>
               <div>${moneda(m.monto)}</div>
               <div class="movement-meta">
                 ${fechaAR(m.fecha)} · Ver detalle
@@ -920,7 +1042,11 @@ async function verDetalleGasto(id) {
 
   $("modalContenido").innerHTML = `
     <h2>${e.descripcion}</h2>
-    <p class="muted">${fechaAR(e.fecha)}</p>
+    <p class="muted">
+      ${fechaAR(e.fecha)}
+      ·
+      <span class="category-pill">${e.categoria || "Otros"}</span>
+    </p>
 
     <h3>Total: ${moneda(e.total)}</h3>
 
@@ -1029,6 +1155,25 @@ async function generarInforme() {
             <div class="receiver">
               <b>${d.acreedor}</b>
               <div class="muted">Debe recibir</div>
+              ${
+                (() => {
+                  const receptor =
+                    todasPersonas.find(p => p.id === d.acreedor_id);
+
+                  const datos = [
+                    receptor?.alias_bancario
+                      ? `Alias: ${receptor.alias_bancario}`
+                      : null,
+                    receptor?.telefono
+                      ? `Tel: ${receptor.telefono}`
+                      : null
+                  ].filter(Boolean);
+
+                  return datos.length
+                    ? `<div class="transfer-contact">${datos.join(" · ")}</div>`
+                    : "";
+                })()
+              }
             </div>
             <div class="debt-amount">${moneda(d.monto)}</div>
           </div>
@@ -1253,6 +1398,7 @@ async function actualizarTodo() {
   ]);
 
   await generarInforme();
+  clearStatsLoading();
 }
 
 $("fechaGasto").value = hoy();
@@ -1261,10 +1407,25 @@ $("informeDesde").value = inicioMesActual();
 $("informeHasta").value = finMesActual();
 
 (async function iniciar() {
-  await cargarGrupos();
+  setStatsLoading();
+  setLoading(true);
 
-  if (grupoId())
-    await actualizarTodo();
+  try {
+    await cargarGrupos();
+
+    if (grupoId()) {
+      await actualizarTodo();
+    } else {
+      clearStatsLoading();
+    }
+  } catch (e) {
+    console.error(e);
+    alert(
+      "No se pudieron cargar los datos. Revisá la conexión e intentá nuevamente."
+    );
+  } finally {
+    setLoading(false);
+  }
 })();
 
 // ---------- PWA / SERVICE WORKER ----------

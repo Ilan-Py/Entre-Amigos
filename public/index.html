@@ -40,19 +40,19 @@
   <section class="stats">
     <div class="stat">
       <span>Gasto del mes</span>
-      <b id="gastoTotal">$0,00</b>
+      <b id="gastoTotal" class="stat-value loading-value">—</b>
     </div>
     <div class="stat">
       <span>Saldo pendiente</span>
-      <b id="totalDeuda">$0,00</b>
+      <b id="totalDeuda" class="stat-value loading-value">—</b>
     </div>
     <div class="stat">
       <span>Eventos del mes</span>
-      <b id="cantEventos">0</b>
+      <b id="cantEventos" class="stat-value loading-value">—</b>
     </div>
     <div class="stat">
       <span>Integrantes</span>
-      <b id="cantPersonas">0</b>
+      <b id="cantPersonas" class="stat-value loading-value">—</b>
     </div>
   </section>
 
@@ -115,9 +115,35 @@
             Fecha
             <input id="fechaGasto" type="date" required>
           </label>
+
+          <label>
+            Categoría
+            <select id="categoriaGasto">
+              <option value="Comida">Comida</option>
+              <option value="Transporte">Transporte</option>
+              <option value="Alojamiento">Alojamiento</option>
+              <option value="Compras">Compras</option>
+              <option value="Entretenimiento">Entretenimiento</option>
+              <option value="Servicios">Servicios</option>
+              <option value="Otros" selected>Otros</option>
+              <option value="__otra__">Otra categoría...</option>
+            </select>
+          </label>
+
+          <label id="categoriaOtraWrap" class="oculto">
+            Categoría personalizada
+            <input id="categoriaOtra" maxlength="80" placeholder="Ej: Excursiones">
+          </label>
         </div>
 
-        <h3>Participantes</h3>
+        <div class="section-heading-row">
+          <h3>Participantes</h3>
+          <div class="mini-actions">
+            <button id="btnSeleccionarTodos" type="button">Seleccionar todos</button>
+            <button id="btnDeseleccionarTodos" type="button">Deseleccionar</button>
+          </div>
+        </div>
+
         <div id="participantes" class="chips"></div>
 
         <label class="custom-check">
@@ -186,38 +212,62 @@
 
   <section id="personas" class="panel">
     <div class="dos-columnas">
-      <article class="card">
-        <h2>Agregar persona</h2>
+      <article class="card people-entry-card">
+        <div id="onboardingGrupo" class="onboarding-box oculto">
+          <div class="onboarding-step">Nuevo grupo</div>
+          <h2>Primero agregá a las personas</h2>
+          <p class="muted">
+            Reutilizá contactos existentes siempre que puedas. Así evitás duplicados
+            y mantenés un único teléfono y alias por persona.
+          </p>
+        </div>
 
-        <form id="formPersona">
-          <div class="form-grid">
-            <label>
-              Nombre *
-              <input id="nombrePersona" required>
-            </label>
-            <label>
-              Apellido
-              <input id="apellidoPersona">
-            </label>
-            <label>
-              Teléfono
-              <input id="telefonoPersona">
-            </label>
-            <label>
-              Alias bancario
-              <input id="aliasPersona" placeholder="ejemplo.alias">
-            </label>
+        <div class="existing-person-highlight">
+          <div class="eyebrow">Recomendado</div>
+          <h2>Agregar una persona existente</h2>
+          <p class="muted">
+            Elegí a alguien que ya exista en tu directorio general.
+          </p>
+
+          <div class="inline-form existing-person-form">
+            <select id="personaExistente"></select>
+            <button id="btnAgregarExistente" type="button" class="primary">Agregar</button>
           </div>
+        </div>
 
-          <button class="primary">Agregar al grupo actual</button>
-        </form>
+        <div class="divider-with-text"><span>o crear una nueva</span></div>
 
-        <hr>
+        <details class="new-person-details">
+          <summary>Nueva persona</summary>
 
-        <h3>Agregar una persona existente</h3>
-        <div class="inline-form">
-          <select id="personaExistente"></select>
-          <button id="btnAgregarExistente" type="button">Agregar</button>
+          <form id="formPersona">
+            <div class="form-grid">
+              <label>
+                Nombre *
+                <input id="nombrePersona" required>
+              </label>
+              <label>
+                Apellido
+                <input id="apellidoPersona">
+              </label>
+              <label>
+                Teléfono
+                <input id="telefonoPersona">
+              </label>
+              <label>
+                Alias bancario
+                <input id="aliasPersona" placeholder="ejemplo.alias">
+              </label>
+            </div>
+
+            <button class="primary">Crear y agregar al grupo</button>
+          </form>
+        </details>
+
+        <div id="onboardingContinuar" class="onboarding-continue oculto">
+          <button id="btnPrimerGasto" type="button" class="primary">
+            Continuar al primer gasto
+          </button>
         </div>
       </article>
 
@@ -301,6 +351,16 @@
     </article>
   </section>
 </main>
+
+<div id="appLoading" class="app-loading">
+  <div class="loading-card">
+    <div class="spinner"></div>
+    <div>
+      <b id="loadingTitle">Cargando Entre Amigos</b>
+      <span id="loadingText">Buscando los datos del grupo...</span>
+    </div>
+  </div>
+</div>
 
 <div id="modal" class="modal oculto">
   <div class="modal-card">

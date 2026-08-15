@@ -38,7 +38,7 @@ app.post("/api/grupos", async (req, res) => {
     );
     res.status(201).json({ id: r[0].id, nombre });
   } catch (e) {
-    if (e.code === "ER_DUP_ENTRY")
+    if (e.code === "23505")
       return res.status(400).json({ error: "Ya existe un grupo con ese nombre." });
 
     res.status(500).json({ error: e.message });
@@ -151,8 +151,9 @@ app.post("/api/personas", async (req, res) => {
       if (grupo_id) {
         await conn.query(`
           INSERT INTO grupo_persona(grupo_id, persona_id, activo)
-          VALUES (?, ?, 1)
-          ON DUPLICATE KEY UPDATE activo = TRUE
+          VALUES (?, ?, TRUE)
+          ON CONFLICT (grupo_id, persona_id)
+          DO UPDATE SET activo = TRUE
         `, [grupo_id, r[0].id]);
       }
 
@@ -324,6 +325,7 @@ app.post("/api/eventos", async (req, res) => {
     grupo_id,
     descripcion,
     fecha,
+    categoria,
     participantes,
     pagos,
     repartoIgual
@@ -348,6 +350,9 @@ app.post("/api/eventos", async (req, res) => {
     return res.status(400).json({ error: "Al menos un participante debe haber pagado." });
 
   const totalCentavos = pagosValidos.reduce((s, p) => s + p.centavos, 0);
+
+  const categoriaFinal =
+    String(categoria || "Otros").trim().slice(0, 80) || "Otros";
 
   let participantesFinales;
 
@@ -384,10 +389,10 @@ app.post("/api/eventos", async (req, res) => {
     await conn.beginTransaction();
 
     const [evento] = await conn.query(`
-      INSERT INTO eventos(grupo_id, descripcion, fecha)
-      VALUES (?, ?, ?)
+      INSERT INTO eventos(grupo_id, descripcion, fecha, categoria)
+      VALUES (?, ?, ?, ?)
       RETURNING id
-    `, [grupo_id, descripcion.trim(), fecha]);
+    `, [grupo_id, descripcion.trim(), fecha, categoriaFinal]);
 
     for (const p of participantesFinales) {
       await conn.query(`
@@ -437,7 +442,7 @@ app.get("/api/eventos", async (req, res) => {
     }
 
     const [eventos] = await db.query(`
-      SELECT e.id, e.descripcion, e.fecha
+      SELECT e.id, e.descripcion, e.fecha, e.categoria
       FROM eventos e
       WHERE ${filtros.join(" AND ")}
       ORDER BY e.fecha, e.id
@@ -981,14 +986,15 @@ app.get("/api/movimientos", async (req, res) => {
         e.id,
         e.fecha,
         e.descripcion,
+        e.categoria,
         COALESCE(SUM(pe.monto),0) AS monto,
         'Gasto' AS tipo
       FROM eventos e
       LEFT JOIN pagos_evento pe ON pe.evento_id = e.id
       WHERE e.grupo_id = ?
-        ${q ? "AND e.descripcion ILIKE ?" : ""}
-      GROUP BY e.id, e.fecha, e.descripcion
-    `, q ? [grupoId, like] : [grupoId]);
+        ${q ? "AND (e.descripcion ILIKE ? OR e.categoria ILIKE ?)" : ""}
+      GROUP BY e.id, e.fecha, e.descripcion, e.categoria
+    `, q ? [grupoId, like, like] : [grupoId]);
 
     const [pagos] = await db.query(`
       SELECT
