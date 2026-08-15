@@ -2376,3 +2376,37 @@ main,
     width: 100%;
   }
 }
+
+
+/* ===== V11.2.1: directorio maestro visible ===== */
+
+#personas.super-directory-mode > .dos-columnas {
+  display: none !important;
+}
+
+#personas.super-directory-mode #directorioGeneralCard {
+  margin-top: 0;
+  border-color: #cbded9;
+}
+
+#personas.super-directory-mode #directorioGeneralCard .toolbar {
+  margin-bottom: 10px;
+}
+
+#personas.super-directory-mode #directorioGeneralCard {
+  box-shadow: var(--shadow);
+}
+
+#personas.super-directory-mode .super-directory-header {
+  display: block;
+}
+
+#tabPersonas {
+  white-space: nowrap;
+}
+
+@media(max-width:700px) {
+  #personas.super-directory-mode #directorioGeneralCard {
+    padding: 14px;
+  }
+}

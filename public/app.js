@@ -133,7 +133,24 @@ function abrirTab(nombre) {
 }
 
 document.querySelectorAll(".tab").forEach(btn => {
-  btn.addEventListener("click", () => abrirTab(btn.dataset.tab));
+  btn.addEventListener("click", async () => {
+    abrirTab(btn.dataset.tab);
+
+    if (
+      btn.dataset.tab === "personas" &&
+      esSupergrupo()
+    ) {
+      try {
+        directorioPersonas =
+          await api("/api/directorio-personas");
+
+        renderDirectorio();
+      } catch (e) {
+        console.error(e);
+        alert("No se pudo cargar el directorio de personas.");
+      }
+    }
+  });
 });
 
 // ---------- GRUPOS ----------
@@ -170,6 +187,17 @@ $("grupoActual").addEventListener("change", async () => {
   );
 
   actualizarModoSupergrupo();
+
+  if (
+    esSupergrupo() &&
+    document.querySelector(".panel.activo")?.id === "personas"
+  ) {
+    directorioPersonas =
+      await api("/api/directorio-personas");
+
+    renderDirectorio();
+  }
+
   setStatsLoading();
 
   setLoading(
@@ -236,22 +264,54 @@ function actualizarModoSupergrupo() {
     supergrupo
   );
 
-  // En supergrupo no se cargan gastos/pagos ni se administran membresías.
   document.querySelector('.tab[data-tab="gasto"]')
     ?.classList.toggle("oculto", supergrupo);
 
   document.querySelector('.tab[data-tab="pago"]')
     ?.classList.toggle("oculto", supergrupo);
 
-  document.querySelector('.tab[data-tab="personas"]')
-    ?.classList.remove("oculto");
+  const tabPersonas = $("tabPersonas");
 
-  $("superDirectorioHeader")?.classList.toggle("oculto", !supergrupo);
-  $("personasIngresoCard")?.classList.toggle("oculto", supergrupo);
-  $("integrantesGrupoCard")?.classList.toggle("oculto", supergrupo);
+  if (tabPersonas) {
+    tabPersonas.classList.remove("oculto");
+    tabPersonas.textContent =
+      supergrupo ? "Directorio" : "Personas";
+  }
+
+  $("superDirectorioHeader")?.classList.toggle(
+    "oculto",
+    !supergrupo
+  );
+
+  $("personasIngresoCard")?.classList.toggle(
+    "oculto",
+    supergrupo
+  );
+
+  $("integrantesGrupoCard")?.classList.toggle(
+    "oculto",
+    supergrupo
+  );
+
+  if ($("tituloDirectorioGeneral")) {
+    $("tituloDirectorioGeneral").textContent =
+      supergrupo
+        ? "Directorio maestro"
+        : "Directorio general";
+  }
+
+  const panelPersonas = $("personas");
+
+  if (panelPersonas) {
+    panelPersonas.classList.toggle(
+      "super-directory-mode",
+      supergrupo
+    );
+  }
 
   if (supergrupo) {
-    const activo = document.querySelector(".panel.activo")?.id;
+    const activo =
+      document.querySelector(".panel.activo")?.id;
 
     if (["gasto", "pago"].includes(activo)) {
       abrirTab("resumen");
@@ -265,6 +325,7 @@ async function cargarPersonasSupergrupo() {
   directorioPersonas = await api("/api/directorio-personas");
 
   renderSelectsPersonas();
+  actualizarModoSupergrupo();
   renderDirectorio();
 }
 
