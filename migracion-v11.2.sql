@@ -1,0 +1,6 @@
+ALTER TABLE personas
+  ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_personas_activo
+  ON personas(activo);

@@ -244,12 +244,16 @@ function actualizarModoSupergrupo() {
     ?.classList.toggle("oculto", supergrupo);
 
   document.querySelector('.tab[data-tab="personas"]')
-    ?.classList.toggle("oculto", supergrupo);
+    ?.classList.remove("oculto");
+
+  $("superDirectorioHeader")?.classList.toggle("oculto", !supergrupo);
+  $("personasIngresoCard")?.classList.toggle("oculto", supergrupo);
+  $("integrantesGrupoCard")?.classList.toggle("oculto", supergrupo);
 
   if (supergrupo) {
     const activo = document.querySelector(".panel.activo")?.id;
 
-    if (["gasto", "pago", "personas"].includes(activo)) {
+    if (["gasto", "pago"].includes(activo)) {
       abrirTab("resumen");
     }
   }
@@ -261,6 +265,7 @@ async function cargarPersonasSupergrupo() {
   directorioPersonas = await api("/api/directorio-personas");
 
   renderSelectsPersonas();
+  renderDirectorio();
 }
 
 async function cargarResumenSupergrupo() {
@@ -877,10 +882,20 @@ function renderDirectorio(filtro = "") {
 
             <div class="person-actions">
               <button onclick="editarPersona(${p.id})">Editar</button>
+
               ${
-                estaActivo
-                  ? `<span class="directory-current">En este grupo</span>`
-                  : `<button onclick="agregarPersonaDirectorio(${p.id})">Agregar al grupo</button>`
+                esSupergrupo()
+                  ? `
+                    <button
+                      class="danger-soft"
+                      onclick="ocultarPersonaDirectorio(${p.id})"
+                    >
+                      Ocultar
+                    </button>
+                  `
+                  : estaActivo
+                    ? `<span class="directory-current">En este grupo</span>`
+                    : `<button onclick="agregarPersonaDirectorio(${p.id})">Agregar al grupo</button>`
               }
             </div>
           </div>
@@ -902,6 +917,111 @@ async function agregarPersonaDirectorio(id) {
     alert(e.message);
   }
 }
+
+
+async function ocultarPersonaDirectorio(id) {
+  const persona = directorioPersonas.find(p => p.id === id);
+  const nombre = persona ? nombreCompleto(persona) : "esta persona";
+
+  if (!confirm(
+    `¿Ocultar a ${nombre} del directorio?\n\n` +
+    `No se borrará su historial y dejará de aparecer como opción ` +
+    `para agregarla a grupos.`
+  )) return;
+
+  setLoading(true, "Ocultando persona", "Verificando saldos pendientes...");
+
+  try {
+    await api(`/api/personas/${id}/ocultar`, { method: "POST" });
+
+    toast("Persona ocultada");
+
+    if (esSupergrupo()) {
+      await actualizarSupergrupo();
+    } else {
+      await actualizarTodo();
+    }
+  } catch (e) {
+    if (e.data?.pendientes?.length) {
+      const detalle = e.data.pendientes.map(p =>
+        p.saldo > 0
+          ? `• ${p.grupo}: debe recibir ${moneda(p.saldo)}`
+          : `• ${p.grupo}: debe pagar ${moneda(-p.saldo)}`
+      ).join("\n");
+
+      alert(`No se puede ocultar todavía.\n\n${detalle}`);
+    } else {
+      alert(e.message);
+    }
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function mostrarPersonasOcultas() {
+  try {
+    const todas = await api("/api/directorio-personas?incluir_ocultas=true");
+    const ocultas = todas.filter(p => !p.activo);
+
+    $("modalContenido").innerHTML = `
+      <h2>Personas ocultas</h2>
+      <p class="muted">
+        Conservan todo su historial y pueden restaurarse al directorio.
+      </p>
+
+      ${
+        ocultas.length
+          ? ocultas.map(p => `
+              <div class="archived-group-row">
+                <div>
+                  <b>${nombreCompleto(p)}</b>
+                  <div class="muted">
+                    ${p.alias_bancario ? `Alias: ${p.alias_bancario}` : "Sin alias"}
+                    ${p.telefono ? ` · Tel: ${p.telefono}` : ""}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onclick="restaurarPersona(${p.id})"
+                >
+                  Restaurar persona
+                </button>
+              </div>
+            `).join("")
+          : `<p class="muted">No hay personas ocultas.</p>`
+      }
+    `;
+
+    $("modal").classList.remove("oculto");
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function restaurarPersona(id) {
+  try {
+    await api(`/api/personas/${id}/restaurar`, { method: "POST" });
+
+    cerrarModal();
+
+    if (esSupergrupo()) {
+      await actualizarSupergrupo();
+    } else {
+      await actualizarTodo();
+    }
+
+    toast("Persona restaurada");
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+$("btnPersonasOcultas")?.addEventListener(
+  "click",
+  mostrarPersonasOcultas
+);
+
 
 let timerDirectorio;
 

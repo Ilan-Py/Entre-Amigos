@@ -212,8 +212,20 @@
   </section>
 
   <section id="personas" class="panel">
+    <article id="superDirectorioHeader" class="card super-directory-header oculto">
+      <div class="toolbar">
+        <div>
+          <h2>Directorio de personas</h2>
+          <p class="muted">
+            Todas las personas activas. Podés ocultarlas del directorio
+            sin borrar su historial.
+          </p>
+        </div>
+        <button id="btnPersonasOcultas" type="button">Personas ocultas</button>
+      </div>
+    </article>
     <div class="dos-columnas">
-      <article class="card people-entry-card">
+      <article id="personasIngresoCard" class="card people-entry-card">
         <div id="onboardingGrupo" class="onboarding-box oculto">
           <div class="onboarding-step">Nuevo grupo</div>
           <h2>Agregá los integrantes</h2>
@@ -306,13 +318,13 @@
         </div>
       </article>
 
-      <article class="card">
+      <article id="integrantesGrupoCard" class="card">
         <h2>Integrantes del grupo</h2>
         <div id="listaPersonas"></div>
       </article>
     </div>
 
-    <article class="card directory-card">
+    <article id="directorioGeneralCard" class="card directory-card">
       <div class="toolbar">
         <div>
           <h2>Directorio general</h2>

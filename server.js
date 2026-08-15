@@ -123,6 +123,7 @@ app.get("/api/supergrupo/personas", async (_, res) => {
       JOIN grupos g ON g.id = gp.grupo_id
       WHERE gp.activo = TRUE
         AND g.activo = TRUE
+        AND p.activo = TRUE
       ORDER BY p.nombre, p.apellido
     `);
 
@@ -156,6 +157,7 @@ async function obtenerBalancesSupergrupo({ desde = null, hasta = null } = {}) {
     JOIN grupos g ON g.id = gp.grupo_id
     WHERE gp.activo = TRUE
       AND g.activo = TRUE
+      AND p.activo = TRUE
     ORDER BY p.nombre, p.apellido
   `);
 
@@ -496,6 +498,8 @@ app.get("/api/supergrupo/movimientos", async (req, res) => {
 
 app.get("/api/personas", async (req, res) => {
   const grupoId = Number(req.query.grupo_id || 0);
+  const incluirOcultas =
+    String(req.query.incluir_ocultas || "false") === "true";
 
   try {
     if (grupoId) {
@@ -505,19 +509,21 @@ app.get("/api/personas", async (req, res) => {
         JOIN grupo_persona gp ON gp.persona_id = p.id
         WHERE gp.grupo_id = ?
           AND gp.activo = TRUE
+          ${incluirOcultas ? "" : "AND p.activo = TRUE"}
         ORDER BY p.nombre, p.apellido
       `, [grupoId]);
+
       return res.json(rows);
     }
 
     const [rows] = await db.query(`
       SELECT *
       FROM personas
+      ${incluirOcultas ? "" : "WHERE activo = TRUE"}
       ORDER BY nombre, apellido
     `);
 
     res.json(rows);
-
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -704,7 +710,10 @@ app.delete("/api/grupos/:grupoId/personas/:personaId", async (req, res) => {
 });
 
 
-app.get("/api/directorio-personas", async (_, res) => {
+app.get("/api/directorio-personas", async (req, res) => {
+  const incluirOcultas =
+    String(req.query.incluir_ocultas || "false") === "true";
+
   try {
     const [rows] = await db.query(`
       SELECT
@@ -713,40 +722,49 @@ app.get("/api/directorio-personas", async (_, res) => {
         p.apellido,
         p.telefono,
         p.alias_bancario,
+        p.activo,
+        p.hidden_at,
         STRING_AGG(
-          DISTINCT CASE WHEN gp.activo = TRUE THEN g.nombre END,
-          ', ' ORDER BY CASE WHEN gp.activo = TRUE THEN g.nombre END
+          DISTINCT CASE
+            WHEN gp.activo = TRUE AND g.activo = TRUE
+            THEN g.nombre
+          END,
+          ', ' ORDER BY CASE
+            WHEN gp.activo = TRUE AND g.activo = TRUE
+            THEN g.nombre
+          END
         ) AS grupos_activos,
         STRING_AGG(
-          DISTINCT CASE WHEN gp.activo = FALSE THEN g.nombre END,
-          ', ' ORDER BY CASE WHEN gp.activo = FALSE THEN g.nombre END
+          DISTINCT CASE
+            WHEN gp.activo = FALSE OR g.activo = FALSE
+            THEN g.nombre
+          END,
+          ', ' ORDER BY CASE
+            WHEN gp.activo = FALSE OR g.activo = FALSE
+            THEN g.nombre
+          END
         ) AS grupos_ocultos
       FROM personas p
       LEFT JOIN grupo_persona gp ON gp.persona_id = p.id
       LEFT JOIN grupos g ON g.id = gp.grupo_id
+      ${incluirOcultas ? "" : "WHERE p.activo = TRUE"}
       GROUP BY
-        p.id, p.nombre, p.apellido, p.telefono, p.alias_bancario
-      ORDER BY p.nombre, p.apellido, p.id
+        p.id, p.nombre, p.apellido, p.telefono,
+        p.alias_bancario, p.activo, p.hidden_at
+      ORDER BY p.activo DESC, p.nombre, p.apellido, p.id
     `);
 
-    // Marca posibles duplicados por nombre+apellido, teléfono o alias.
-    const keyCount = new Map();
-
-    const normalizar = v =>
-      String(v || "").trim().toLowerCase();
+    const normalizar = v => String(v || "").trim().toLowerCase();
+    const conteo = new Map();
 
     for (const p of rows) {
-      const keys = [
+      p._keys = [
         `n:${normalizar(p.nombre)}|${normalizar(p.apellido)}`,
         p.telefono ? `t:${normalizar(p.telefono)}` : null,
         p.alias_bancario ? `a:${normalizar(p.alias_bancario)}` : null
       ].filter(Boolean);
 
-      p._keys = keys;
-
-      for (const k of keys) {
-        keyCount.set(k, (keyCount.get(k) || 0) + 1);
-      }
+      p._keys.forEach(k => conteo.set(k, (conteo.get(k) || 0) + 1));
     }
 
     res.json(rows.map(p => ({
@@ -755,11 +773,77 @@ app.get("/api/directorio-personas", async (_, res) => {
       apellido: p.apellido,
       telefono: p.telefono,
       alias_bancario: p.alias_bancario,
+      activo: p.activo,
+      hidden_at: p.hidden_at,
       grupos_activos: p.grupos_activos,
       grupos_ocultos: p.grupos_ocultos,
-      posible_duplicado: p._keys.some(k => (keyCount.get(k) || 0) > 1)
+      posible_duplicado: p._keys.some(k => (conteo.get(k) || 0) > 1)
     })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
+
+app.post("/api/personas/:id/ocultar", async (req, res) => {
+  const personaId = Number(req.params.id);
+
+  try {
+    const [grupos] = await db.query(`
+      SELECT DISTINCT g.id, g.nombre
+      FROM grupos g
+      JOIN grupo_persona gp ON gp.grupo_id = g.id
+      WHERE g.activo = TRUE
+        AND gp.activo = TRUE
+        AND gp.persona_id = ?
+    `, [personaId]);
+
+    const pendientes = [];
+
+    for (const g of grupos) {
+      const balances = await obtenerBalances({ grupoId: g.id });
+      const persona = balances.find(p => p.id === personaId);
+
+      if (persona && Math.abs(persona.saldoCentavos) > 0) {
+        pendientes.push({
+          grupo_id: g.id,
+          grupo: g.nombre,
+          saldo: persona.saldo
+        });
+      }
+    }
+
+    if (pendientes.length) {
+      return res.status(400).json({
+        error:
+          "No se puede ocultar esta persona porque todavía tiene saldos pendientes.",
+        pendientes
+      });
+    }
+
+    await db.query(`
+      UPDATE personas
+      SET activo = FALSE,
+          hidden_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [personaId]);
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/personas/:id/restaurar", async (req, res) => {
+  try {
+    await db.query(`
+      UPDATE personas
+      SET activo = TRUE,
+          hidden_at = NULL
+      WHERE id = ?
+    `, [Number(req.params.id)]);
+
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
