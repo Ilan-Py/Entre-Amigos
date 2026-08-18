@@ -10,6 +10,12 @@ const $ = id => document.getElementById(id);
 
 let ultimoDiagnosticoApi = null;
 
+
+function modoDebugActivo() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("debug") === "1";
+}
+
 function registrarErrorApi(url, status, data, error = null) {
   const mensaje =
     data?.error ||
@@ -25,6 +31,11 @@ function registrarErrorApi(url, status, data, error = null) {
   };
 
   console.error("[Entre Amigos API]", ultimoDiagnosticoApi);
+
+  // En producción el detalle técnico queda solo en consola.
+  if (!modoDebugActivo()) {
+    return;
+  }
 
   let panel = $("apiDebug");
 
@@ -101,7 +112,12 @@ async function authRequest(url, options = {}) {
       data = await response.json();
     } catch (_) {}
 
-    if (!response.ok) {
+    const authMeSinSesion =
+      url === "/api/auth/me" &&
+      response.status === 401 &&
+      data?.authenticated === false;
+
+    if (!response.ok && !authMeSinSesion) {
       registrarErrorApi(url, response.status, data);
     }
 
@@ -368,7 +384,13 @@ async function api(url, options={}) {
   }
 
   if (r.status === 401) {
-    registrarErrorApi(url, r.status, data);
+    const authMeSinSesion =
+      url === "/api/auth/me" &&
+      data?.authenticated === false;
+
+    if (!authMeSinSesion) {
+      registrarErrorApi(url, r.status, data);
+    }
 
     mostrarLogin();
 
