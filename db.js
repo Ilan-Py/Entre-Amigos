@@ -1,4 +1,6 @@
-const { Pool } = require("pg");
+import pg from "pg";
+
+const { Pool } = pg;
 
 if (!process.env.DATABASE_URL) {
   console.warn(
@@ -10,15 +12,11 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl:
-    process.env.NODE_ENV === "production"
+    process.env.DATABASE_URL
       ? { rejectUnauthorized: false }
-      : process.env.DATABASE_URL
-        ? { rejectUnauthorized: false }
-        : false
+      : false
 });
 
-// Adaptador pequeño para mantener el patrón existente:
-// const [rows] = await db.query(...)
 function pgSql(sql) {
   let i = 0;
   return sql.replace(/\?/g, () => `$${++i}`);
@@ -56,7 +54,7 @@ async function getConnection() {
   };
 }
 
-module.exports = {
+export default {
   query,
   getConnection,
   pool

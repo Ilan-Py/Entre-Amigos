@@ -1,9 +1,33 @@
-const express = require("express");
-const path = require("path");
-const db = require("./db");
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import db from "./db.js";
+import {
+  authConfig,
+  authHandler,
+  authMe,
+  requireAppUser,
+  requireOwnedGroupParam,
+  requireOwnedGroupFromRequest,
+  requireOwnedPerson
+} from "./auth.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
+
+app.set("trust proxy", true);
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.use("/auth/*", authHandler);
+
+app.get("/api/auth/me", authMe);
+
+// Todo /api/* debajo de este punto requiere sesión.
+app.use("/api", requireAppUser);
+
 app.use(express.static(path.join(__dirname, "public")));
 
 const aCentavos = v => Math.round(Number(v || 0) * 100);
@@ -26,10 +50,11 @@ app.get("/api/grupos", async (req, res) => {
         COUNT(CASE WHEN gp.activo = TRUE THEN gp.persona_id END) AS integrantes
       FROM grupos g
       LEFT JOIN grupo_persona gp ON gp.grupo_id = g.id
-      ${incluirArchivados ? "" : "WHERE g.activo = TRUE"}
+      WHERE g.usuario_id = ?
+        ${incluirArchivados ? "" : "AND g.activo = TRUE"}
       GROUP BY g.id, g.nombre, g.activo, g.archived_at
       ORDER BY g.activo DESC, g.nombre
-    `);
+    `, [req.appUser.id]);
 
     res.json(rows);
   } catch (e) {
@@ -43,8 +68,8 @@ app.post("/api/grupos", async (req, res) => {
 
   try {
     const [r] = await db.query(
-      "INSERT INTO grupos(nombre) VALUES (?) RETURNING id",
-      [nombre]
+      "INSERT INTO grupos(nombre, usuario_id) VALUES (?, ?) RETURNING id",
+      [nombre, req.appUser.id]
     );
     res.status(201).json({ id: r[0].id, nombre });
   } catch (e) {
@@ -56,7 +81,7 @@ app.post("/api/grupos", async (req, res) => {
 });
 
 
-app.post("/api/grupos/:id/archivar", async (req, res) => {
+app.post("/api/grupos/:id/archivar", await requireOwnedGroupParam("id"), async (req, res) => {
   const grupoId = Number(req.params.id);
 
   try {
@@ -89,7 +114,7 @@ app.post("/api/grupos/:id/archivar", async (req, res) => {
   }
 });
 
-app.post("/api/grupos/:id/restaurar", async (req, res) => {
+app.post("/api/grupos/:id/restaurar", await requireOwnedGroupParam("id"), async (req, res) => {
   try {
     await db.query(`
       UPDATE grupos
@@ -124,8 +149,10 @@ app.get("/api/supergrupo/personas", async (_, res) => {
       WHERE gp.activo = TRUE
         AND g.activo = TRUE
         AND p.activo = TRUE
+        AND g.usuario_id = ?
+        AND p.usuario_id = ?
       ORDER BY p.nombre, p.apellido
-    `);
+    `, [req.appUser.id, req.appUser.id]);
 
     res.json(rows);
   } catch (e) {
@@ -133,7 +160,7 @@ app.get("/api/supergrupo/personas", async (_, res) => {
   }
 });
 
-async function obtenerBalancesSupergrupo({ desde = null, hasta = null } = {}) {
+async function obtenerBalancesSupergrupo({ usuarioId, desde = null, hasta = null } = {}) {
   const paramsEventos = [];
   const filtrosEventos = ["g.activo = TRUE"];
 
@@ -158,8 +185,13 @@ async function obtenerBalancesSupergrupo({ desde = null, hasta = null } = {}) {
     WHERE gp.activo = TRUE
       AND g.activo = TRUE
       AND p.activo = TRUE
+      AND g.usuario_id = ?
+      AND p.usuario_id = ?
     ORDER BY p.nombre, p.apellido
-  `);
+  `, [usuarioId, usuarioId]);
+
+  filtrosEventos.push("g.usuario_id = ?");
+  paramsEventos.push(usuarioId);
 
   const [pagosEvento] = await db.query(`
     SELECT
@@ -184,7 +216,11 @@ async function obtenerBalancesSupergrupo({ desde = null, hasta = null } = {}) {
   `, paramsEventos);
 
   const paramsTransferencias = [];
-  const filtrosTransferencias = ["g.activo = TRUE"];
+  const filtrosTransferencias = [
+    "g.activo = TRUE",
+    "g.usuario_id = ?"
+  ];
+  paramsTransferencias.push(usuarioId);
 
   if (desde) {
     filtrosTransferencias.push("pd.fecha >= ?");
@@ -271,7 +307,7 @@ app.get("/api/supergrupo/resumen", async (req, res) => {
     const personaId = Number(req.query.persona_id || 0);
 
     const todosBalances =
-      await obtenerBalancesSupergrupo({ desde, hasta });
+      await obtenerBalancesSupergrupo({ usuarioId: req.appUser.id, desde, hasta });
 
     const balances = personaId
       ? todosBalances.filter(p => p.id === personaId)
@@ -288,7 +324,11 @@ app.get("/api/supergrupo/resumen", async (req, res) => {
       : deudas;
 
     const params = [];
-    const filtros = ["g.activo = TRUE"];
+    const filtros = [
+      "g.activo = TRUE",
+      "g.usuario_id = ?"
+    ];
+    params.push(req.appUser.id);
 
     if (desde) {
       filtros.push("e.fecha >= ?");
@@ -299,6 +339,9 @@ app.get("/api/supergrupo/resumen", async (req, res) => {
       filtros.push("e.fecha <= ?");
       params.push(hasta);
     }
+
+    filtros.push("g.usuario_id = ?");
+    params.push(req.appUser.id);
 
     const [[stats]] = await db.query(`
       SELECT
@@ -324,7 +367,12 @@ app.get("/api/supergrupo/resumen", async (req, res) => {
           JOIN grupos g ON g.id = e.grupo_id
           WHERE ${filtros.join(" AND ")}
         ) AS gasto_total
-    `, [...params, ...params]);
+    `, [
+      req.appUser.id,
+      req.appUser.id,
+      ...params,
+      ...params
+    ]);
 
     res.json({
       balances,
@@ -441,6 +489,7 @@ app.get("/api/supergrupo/movimientos", async (req, res) => {
       JOIN grupos g ON g.id = e.grupo_id
       LEFT JOIN pagos_evento pe ON pe.evento_id = e.id
       WHERE g.activo = TRUE
+        AND g.usuario_id = ?
         ${
           q
             ? "AND (e.descripcion ILIKE ? OR e.categoria ILIKE ? OR g.nombre ILIKE ?)"
@@ -452,7 +501,9 @@ app.get("/api/supergrupo/movimientos", async (req, res) => {
         e.descripcion,
         e.categoria,
         g.nombre
-    `, q ? [like, like, like] : []);
+    `, q
+      ? [req.appUser.id, like, like, like]
+      : [req.appUser.id]);
 
     const [pagos] = await db.query(`
       SELECT
@@ -469,6 +520,7 @@ app.get("/api/supergrupo/movimientos", async (req, res) => {
       JOIN personas d ON d.id = pd.deudor_id
       JOIN personas a ON a.id = pd.acreedor_id
       WHERE g.activo = TRUE
+        AND g.usuario_id = ?
         ${
           q
             ? `AND (
@@ -479,7 +531,9 @@ app.get("/api/supergrupo/movimientos", async (req, res) => {
             )`
             : ""
         }
-    `, q ? [like, like, like, like] : []);
+    `, q
+      ? [req.appUser.id, like, like, like, like]
+      : [req.appUser.id]);
 
     res.json(
       [...eventos, ...pagos].sort(
@@ -509,9 +563,10 @@ app.get("/api/personas", async (req, res) => {
         JOIN grupo_persona gp ON gp.persona_id = p.id
         WHERE gp.grupo_id = ?
           AND gp.activo = TRUE
+          AND p.usuario_id = ?
           ${incluirOcultas ? "" : "AND p.activo = TRUE"}
         ORDER BY p.nombre, p.apellido
-      `, [grupoId]);
+      `, [grupoId, req.appUser.id]);
 
       return res.json(rows);
     }
@@ -519,9 +574,10 @@ app.get("/api/personas", async (req, res) => {
     const [rows] = await db.query(`
       SELECT *
       FROM personas
-      ${incluirOcultas ? "" : "WHERE activo = TRUE"}
+      WHERE usuario_id = ?
+        ${incluirOcultas ? "" : "AND activo = TRUE"}
       ORDER BY nombre, apellido
-    `);
+    `, [req.appUser.id]);
 
     res.json(rows);
   } catch (e) {
@@ -572,10 +628,11 @@ app.post("/api/personas", async (req, res) => {
       const [coincidencias] = await db.query(`
         SELECT *
         FROM personas
-        WHERE ${condiciones.map(c => `(${c})`).join(" OR ")}
+        WHERE usuario_id = ?
+          AND (${condiciones.map(c => `(${c})`).join(" OR ")})
         ORDER BY id
         LIMIT 1
-      `, params);
+      `, [req.appUser.id, ...params]);
 
       if (coincidencias.length) {
         return res.status(409).json({
@@ -591,14 +648,17 @@ app.post("/api/personas", async (req, res) => {
       await conn.beginTransaction();
 
       const [r] = await conn.query(`
-        INSERT INTO personas(nombre, apellido, telefono, alias_bancario)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO personas(
+          nombre, apellido, telefono, alias_bancario, usuario_id
+        )
+        VALUES (?, ?, ?, ?, ?)
         RETURNING id
       `, [
         n,
         a || null,
         t || null,
-        alias || null
+        alias || null,
+        req.appUser.id
       ]);
 
       if (grupo_id) {
@@ -625,7 +685,7 @@ app.post("/api/personas", async (req, res) => {
   }
 });
 
-app.put("/api/personas/:id", async (req, res) => {
+app.put("/api/personas/:id", requireOwnedPerson, async (req, res) => {
   const id = Number(req.params.id);
 
   const {
@@ -663,7 +723,7 @@ app.put("/api/personas/:id", async (req, res) => {
   }
 });
 
-app.post("/api/grupos/:grupoId/personas/:personaId", async (req, res) => {
+app.post("/api/grupos/:grupoId/personas/:personaId", await requireOwnedGroupParam("grupoId"), requireOwnedPerson, async (req, res) => {
   try {
     await db.query(`
       INSERT INTO grupo_persona(grupo_id, persona_id, activo)
@@ -679,7 +739,7 @@ app.post("/api/grupos/:grupoId/personas/:personaId", async (req, res) => {
   }
 });
 
-app.delete("/api/grupos/:grupoId/personas/:personaId", async (req, res) => {
+app.delete("/api/grupos/:grupoId/personas/:personaId", await requireOwnedGroupParam("grupoId"), requireOwnedPerson, async (req, res) => {
   try {
     const grupoId = Number(req.params.grupoId);
     const personaId = Number(req.params.personaId);
@@ -746,13 +806,16 @@ app.get("/api/directorio-personas", async (req, res) => {
         ) AS grupos_ocultos
       FROM personas p
       LEFT JOIN grupo_persona gp ON gp.persona_id = p.id
-      LEFT JOIN grupos g ON g.id = gp.grupo_id
-      ${incluirOcultas ? "" : "WHERE p.activo = TRUE"}
+      LEFT JOIN grupos g
+        ON g.id = gp.grupo_id
+       AND g.usuario_id = ?
+      WHERE p.usuario_id = ?
+        ${incluirOcultas ? "" : "AND p.activo = TRUE"}
       GROUP BY
         p.id, p.nombre, p.apellido, p.telefono,
         p.alias_bancario, p.activo, p.hidden_at
       ORDER BY p.activo DESC, p.nombre, p.apellido, p.id
-    `);
+    `, [req.appUser.id, req.appUser.id]);
 
     const normalizar = v => String(v || "").trim().toLowerCase();
     const conteo = new Map();
@@ -785,7 +848,7 @@ app.get("/api/directorio-personas", async (req, res) => {
 });
 
 
-app.post("/api/personas/:id/ocultar", async (req, res) => {
+app.post("/api/personas/:id/ocultar", requireOwnedPerson, async (req, res) => {
   const personaId = Number(req.params.id);
 
   try {
@@ -834,7 +897,7 @@ app.post("/api/personas/:id/ocultar", async (req, res) => {
   }
 });
 
-app.post("/api/personas/:id/restaurar", async (req, res) => {
+app.post("/api/personas/:id/restaurar", requireOwnedPerson, async (req, res) => {
   try {
     await db.query(`
       UPDATE personas
@@ -851,7 +914,7 @@ app.post("/api/personas/:id/restaurar", async (req, res) => {
 
 // ---------- EVENTOS / GASTOS ----------
 
-app.post("/api/eventos", async (req, res) => {
+app.post("/api/eventos", requireOwnedGroupFromRequest("body", "grupo_id"), async (req, res) => {
   const {
     grupo_id,
     descripcion,
@@ -950,7 +1013,7 @@ app.post("/api/eventos", async (req, res) => {
   }
 });
 
-app.get("/api/eventos", async (req, res) => {
+app.get("/api/eventos", requireOwnedGroupFromRequest("query", "grupo_id"), async (req, res) => {
   const grupoId = Number(req.query.grupo_id || 0);
   const desde = req.query.desde || null;
   const hasta = req.query.hasta || null;
@@ -1028,7 +1091,7 @@ app.get("/api/eventos", async (req, res) => {
 
 // ---------- TRANSFERENCIAS ----------
 
-app.post("/api/pagos", async (req, res) => {
+app.post("/api/pagos", requireOwnedGroupFromRequest("body", "grupo_id"), async (req, res) => {
   const {
     grupo_id,
     deudor_id,
@@ -1406,7 +1469,7 @@ function reconciliarDeudasDirectasConSaldos(deudasBase, balances) {
   return resultado;
 }
 
-app.get("/api/resumen", async (req, res) => {
+app.get("/api/resumen", requireOwnedGroupFromRequest("query", "grupo_id"), async (req, res) => {
   const grupoId = Number(req.query.grupo_id || 0);
 
   if (!grupoId)
@@ -1502,7 +1565,7 @@ app.get("/api/resumen", async (req, res) => {
 
 // ---------- MOVIMIENTOS ----------
 
-app.get("/api/movimientos", async (req, res) => {
+app.get("/api/movimientos", requireOwnedGroupFromRequest("query", "grupo_id"), async (req, res) => {
   const grupoId = Number(req.query.grupo_id || 0);
   const q = String(req.query.q || "").trim();
 
@@ -1565,10 +1628,10 @@ app.get("/api/movimientos", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-if (require.main === module) {
+if (process.env.VERCEL !== "1") {
   app.listen(PORT, () => {
     console.log(`Entre Amigos: http://localhost:${PORT}`);
   });
 }
 
-module.exports = app;
+export default app;

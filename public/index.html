@@ -14,6 +14,31 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div id="authGate" class="auth-gate">
+  <div class="auth-card">
+    <div class="auth-logo">$</div>
+
+    <div>
+      <div class="auth-eyebrow">Entre Amigos</div>
+      <h1>Gastos compartidos, sin vueltas.</h1>
+      <p>
+        Iniciá sesión para acceder a tus grupos, personas,
+        gastos e informes desde cualquier dispositivo.
+      </p>
+    </div>
+
+    <button id="btnGoogleLogin" type="button" class="google-login">
+      <span class="google-g">G</span>
+      Continuar con Google
+    </button>
+
+    <div class="auth-note">
+      Las personas que agregues a tus grupos no necesitan crear una cuenta.
+    </div>
+  </div>
+</div>
+
+<div id="appAuthenticated" hidden>
 
 <header class="topbar">
   <div class="wrap topbar-inner">
@@ -32,6 +57,12 @@
       </div>
       <button id="btnNuevoGrupo" type="button">Nuevo grupo</button>
       <button id="btnArchivarGrupo" type="button" class="group-danger-action">Archivar grupo</button>
+
+      <div id="authUser" class="auth-user">
+        <img id="authUserAvatar" alt="" hidden>
+        <span id="authUserName"></span>
+        <button id="btnLogout" type="button">Salir</button>
+      </div>
     </div>
   </div>
 </header>
@@ -439,6 +470,8 @@
     </article>
   </section>
 </main>
+
+</div>
 
 <div id="appLoading" class="app-loading" hidden>
   <div class="loading-card">

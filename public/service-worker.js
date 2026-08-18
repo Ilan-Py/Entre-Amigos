@@ -1,4 +1,4 @@
-const CACHE_NAME = "entre-amigos-v11-2-2";
+const CACHE_NAME = "entre-amigos-v12";
 
 const ARCHIVOS_APP = [
   "/",
@@ -42,7 +42,13 @@ self.addEventListener("fetch", event => {
   const url = new URL(request.url);
 
   // Las llamadas al backend siempre van a la red.
-  if (url.origin === self.location.origin && url.pathname.startsWith("/api/")) {
+  if (
+    url.origin === self.location.origin &&
+    (
+      url.pathname.startsWith("/api/") ||
+      url.pathname.startsWith("/auth/")
+    )
+  ) {
     event.respondWith(fetch(request));
     return;
   }

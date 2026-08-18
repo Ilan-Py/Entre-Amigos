@@ -7,6 +7,125 @@ let ultimoInforme = null;
 
 const $ = id => document.getElementById(id);
 
+
+async function authRequest(url, options = {}) {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    ...options
+  });
+
+  let data = null;
+
+  try {
+    data = await response.json();
+  } catch (_) {}
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data
+  };
+}
+
+async function obtenerSesionActual() {
+  const result = await authRequest("/api/auth/me");
+  return result.ok ? result.data : null;
+}
+
+async function obtenerCsrfAuth() {
+  const result = await authRequest("/auth/csrf");
+
+  if (!result.ok || !result.data?.csrfToken) {
+    throw new Error("No se pudo iniciar el flujo de autenticación.");
+  }
+
+  return result.data.csrfToken;
+}
+
+async function iniciarSesionGoogle() {
+  try {
+    const csrfToken = await obtenerCsrfAuth();
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/auth/signin/google";
+
+    const csrf = document.createElement("input");
+    csrf.type = "hidden";
+    csrf.name = "csrfToken";
+    csrf.value = csrfToken;
+
+    const callback = document.createElement("input");
+    callback.type = "hidden";
+    callback.name = "callbackUrl";
+    callback.value = window.location.origin + "/";
+
+    form.append(csrf, callback);
+    document.body.appendChild(form);
+    form.submit();
+
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function cerrarSesion() {
+  try {
+    const csrfToken = await obtenerCsrfAuth();
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/auth/signout";
+
+    const csrf = document.createElement("input");
+    csrf.type = "hidden";
+    csrf.name = "csrfToken";
+    csrf.value = csrfToken;
+
+    const callback = document.createElement("input");
+    callback.type = "hidden";
+    callback.name = "callbackUrl";
+    callback.value = window.location.origin + "/";
+
+    form.append(csrf, callback);
+    document.body.appendChild(form);
+    form.submit();
+
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function mostrarSesion(user) {
+  $("authGate").hidden = true;
+  $("appAuthenticated").hidden = false;
+
+  $("authUserName").textContent =
+    user.name || user.email || "Mi cuenta";
+
+  if (user.image) {
+    $("authUserAvatar").src = user.image;
+    $("authUserAvatar").hidden = false;
+  } else {
+    $("authUserAvatar").hidden = true;
+  }
+}
+
+function mostrarLogin() {
+  $("authGate").hidden = false;
+  $("appAuthenticated").hidden = true;
+}
+
+$("btnGoogleLogin")?.addEventListener(
+  "click",
+  iniciarSesionGoogle
+);
+
+$("btnLogout")?.addEventListener(
+  "click",
+  cerrarSesion
+);
+
 const moneda = n =>
   new Intl.NumberFormat("es-AR", {
     style: "currency",
@@ -103,11 +222,21 @@ function clearStatsLoading() {
 
 async function api(url, options={}) {
   const r = await fetch(url, {
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     ...options
   });
 
   const data = await r.json();
+
+  if (r.status === 401) {
+    mostrarLogin();
+
+    const error = new Error("La sesión venció. Volvé a iniciar sesión.");
+    error.status = 401;
+    error.data = data;
+    throw error;
+  }
 
   if (!r.ok) {
     const error = new Error(data.error || "Error");
@@ -2178,6 +2307,19 @@ $("informeDesde").value = inicioMesActual();
 $("informeHasta").value = finMesActual();
 
 (async function iniciar() {
+  const sesion = await obtenerSesionActual();
+
+  if (!sesion?.authenticated || !sesion.user) {
+    mostrarLogin();
+
+    const loader = $("appLoading");
+    if (loader) loader.hidden = true;
+
+    return;
+  }
+
+  mostrarSesion(sesion.user);
+
   setStatsLoading();
   setLoading(true);
 
@@ -2197,9 +2339,11 @@ $("informeHasta").value = finMesActual();
   } catch (e) {
     console.error(e);
 
-    alert(
-      "No se pudieron cargar los datos. Revisá la conexión e intentá nuevamente."
-    );
+    if (e.status !== 401) {
+      alert(
+        "No se pudieron cargar los datos. Revisá la conexión e intentá nuevamente."
+      );
+    }
   } finally {
     setLoading(false);
 
