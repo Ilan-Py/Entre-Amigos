@@ -27,6 +27,23 @@ async function authRequest(url, options = {}) {
   };
 }
 
+
+async function limpiarCachesViejos() {
+  if (!("caches" in window)) return;
+
+  try {
+    const keys = await caches.keys();
+
+    await Promise.all(
+      keys
+        .filter(key => key !== "entre-amigos-v12-0-2")
+        .map(key => caches.delete(key))
+    );
+  } catch (e) {
+    console.warn("No se pudieron limpiar caches viejos:", e);
+  }
+}
+
 async function obtenerSesionActual() {
   const result = await authRequest("/api/auth/me");
   return result.ok ? result.data : null;
@@ -2307,6 +2324,8 @@ $("informeDesde").value = inicioMesActual();
 $("informeHasta").value = finMesActual();
 
 (async function iniciar() {
+  await limpiarCachesViejos();
+
   const sesion = await obtenerSesionActual();
 
   if (!sesion?.authenticated || !sesion.user) {
@@ -2357,8 +2376,12 @@ $("informeHasta").value = finMesActual();
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
-      await navigator.serviceWorker.register("/service-worker.js");
-      console.log("Entre Amigos: Service Worker registrado.");
+      const registration =
+        await navigator.serviceWorker.register("/service-worker.js");
+
+      await registration.update();
+
+      console.log("Entre Amigos: Service Worker actualizado.");
     } catch (error) {
       console.error("No se pudo registrar el Service Worker:", error);
     }

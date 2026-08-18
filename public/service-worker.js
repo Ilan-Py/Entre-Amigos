@@ -1,6 +1,6 @@
-const CACHE_NAME = "entre-amigos-v12";
+const CACHE_NAME = "entre-amigos-v12-0-2";
 
-const ARCHIVOS_APP = [
+const APP_SHELL = [
   "/",
   "/index.html",
   "/styles.css",
@@ -13,7 +13,7 @@ const ARCHIVOS_APP = [
 self.addEventListener("install", event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ARCHIVOS_APP))
+      .then(cache => cache.addAll(APP_SHELL))
       .then(() => self.skipWaiting())
   );
 });
@@ -35,13 +35,11 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const request = event.request;
 
-  if (request.method !== "GET") {
-    return;
-  }
+  if (request.method !== "GET") return;
 
   const url = new URL(request.url);
 
-  // Las llamadas al backend siempre van a la red.
+  // Auth y API: siempre red. Nunca cachear sesiones ni respuestas privadas.
   if (
     url.origin === self.location.origin &&
     (
@@ -53,16 +51,36 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  // Para navegación: intenta internet y, si falla, abre la app cacheada.
-  if (request.mode === "navigate") {
+  // HTML, JS, CSS y manifest: NETWORK FIRST.
+  // Así un deploy nuevo no puede quedar mezclado con assets viejos.
+  if (
+    request.mode === "navigate" ||
+    url.pathname === "/" ||
+    url.pathname === "/index.html" ||
+    url.pathname === "/app.js" ||
+    url.pathname === "/styles.css" ||
+    url.pathname === "/manifest.json"
+  ) {
     event.respondWith(
       fetch(request)
-        .catch(() => caches.match("/index.html"))
+        .then(response => {
+          const copy = response.clone();
+
+          caches.open(CACHE_NAME)
+            .then(cache => cache.put(request, copy));
+
+          return response;
+        })
+        .catch(() =>
+          caches.match(request)
+            .then(cached => cached || caches.match("/index.html"))
+        )
     );
+
     return;
   }
 
-  // Recursos estáticos: cache primero, red como respaldo.
+  // Íconos y demás estáticos: cache-first.
   event.respondWith(
     caches.match(request)
       .then(cached => cached || fetch(request))
