@@ -8,23 +8,123 @@ let ultimoInforme = null;
 const $ = id => document.getElementById(id);
 
 
-async function authRequest(url, options = {}) {
-  const response = await fetch(url, {
-    credentials: "same-origin",
-    ...options
-  });
+let ultimoDiagnosticoApi = null;
 
-  let data = null;
+function registrarErrorApi(url, status, data, error = null) {
+  const mensaje =
+    data?.error ||
+    error?.message ||
+    "Error desconocido";
 
-  try {
-    data = await response.json();
-  } catch (_) {}
-
-  return {
-    ok: response.ok,
-    status: response.status,
+  ultimoDiagnosticoApi = {
+    fecha: new Date().toISOString(),
+    url,
+    status,
+    mensaje,
     data
   };
+
+  console.error("[Entre Amigos API]", ultimoDiagnosticoApi);
+
+  let panel = $("apiDebug");
+
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "apiDebug";
+    panel.className = "api-debug";
+
+    panel.innerHTML = `
+      <div class="api-debug-content">
+        <b id="apiDebugTitle"></b>
+        <span id="apiDebugMessage"></span>
+      </div>
+
+      <div class="api-debug-actions">
+        <button id="btnCopiarDebug" type="button">
+          Copiar diagnóstico
+        </button>
+
+        <button id="btnCerrarDebug" type="button">
+          Cerrar
+        </button>
+      </div>
+    `;
+
+    document.body.appendChild(panel);
+
+    $("btnCerrarDebug").addEventListener("click", () => {
+      panel.remove();
+    });
+
+    $("btnCopiarDebug").addEventListener("click", async () => {
+      if (!ultimoDiagnosticoApi) return;
+
+      const texto = [
+        "Entre Amigos - diagnóstico API",
+        `Fecha: ${ultimoDiagnosticoApi.fecha}`,
+        `Endpoint: ${ultimoDiagnosticoApi.url}`,
+        `HTTP: ${ultimoDiagnosticoApi.status}`,
+        `Mensaje: ${ultimoDiagnosticoApi.mensaje}`,
+        "",
+        "Respuesta:",
+        JSON.stringify(ultimoDiagnosticoApi.data, null, 2)
+      ].join("\\n");
+
+      try {
+        await navigator.clipboard.writeText(texto);
+        toast("Diagnóstico copiado");
+      } catch (_) {
+        console.log(texto);
+      }
+    });
+  }
+
+  $("apiDebugTitle").textContent =
+    `Error API · HTTP ${status || "?"}`;
+
+  $("apiDebugMessage").textContent =
+    `${url} · ${mensaje}`;
+}
+
+
+
+async function authRequest(url, options = {}) {
+  try {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      ...options
+    });
+
+    let data = null;
+
+    try {
+      data = await response.json();
+    } catch (_) {}
+
+    if (!response.ok) {
+      registrarErrorApi(url, response.status, data);
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data
+    };
+
+  } catch (e) {
+    registrarErrorApi(
+      url,
+      0,
+      { error: "NETWORK_ERROR" },
+      e
+    );
+
+    return {
+      ok: false,
+      status: 0,
+      data: { error: e.message }
+    };
+  }
 }
 
 
@@ -238,24 +338,51 @@ function clearStatsLoading() {
 }
 
 async function api(url, options={}) {
-  const r = await fetch(url, {
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    ...options
-  });
+  let r;
 
-  const data = await r.json();
+  try {
+    r = await fetch(url, {
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      ...options
+    });
+  } catch (networkError) {
+    registrarErrorApi(
+      url,
+      0,
+      { error: "NETWORK_ERROR" },
+      networkError
+    );
+
+    throw networkError;
+  }
+
+  let data;
+
+  try {
+    data = await r.json();
+  } catch (_) {
+    data = {
+      error: `Respuesta HTTP ${r.status} sin JSON válido`
+    };
+  }
 
   if (r.status === 401) {
+    registrarErrorApi(url, r.status, data);
+
     mostrarLogin();
 
-    const error = new Error("La sesión venció. Volvé a iniciar sesión.");
+    const error = new Error(
+      "La sesión venció. Volvé a iniciar sesión."
+    );
     error.status = 401;
     error.data = data;
     throw error;
   }
 
   if (!r.ok) {
+    registrarErrorApi(url, r.status, data);
+
     const error = new Error(data.error || "Error");
     error.status = r.status;
     error.data = data;
