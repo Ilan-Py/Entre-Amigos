@@ -134,7 +134,7 @@ app.post("/api/grupos/:id/restaurar", await requireOwnedGroupParam("id"), async 
 // No existe como fila en "grupos". Consolida todos los grupos activos
 // únicamente para lectura, informes, saldos y movimientos.
 
-app.get("/api/supergrupo/personas", async (_, res) => {
+app.get("/api/supergrupo/personas", async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT DISTINCT
