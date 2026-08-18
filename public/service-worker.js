@@ -1,4 +1,4 @@
-const CACHE_NAME = "entre-amigos-v12-0-9b";
+const CACHE_NAME = "entre-amigos-v13";
 
 const APP_SHELL = [
   "/",
@@ -44,7 +44,8 @@ self.addEventListener("fetch", event => {
     url.origin === self.location.origin &&
     (
       url.pathname.startsWith("/api/") ||
-      url.pathname.startsWith("/auth/")
+      url.pathname.startsWith("/auth/") ||
+      url.pathname.startsWith("/demo/")
     )
   ) {
     event.respondWith(fetch(request));

@@ -12,6 +12,12 @@ import {
   requireOwnedPerson
 } from "./auth.js";
 
+import {
+  startDemo,
+  resetDemo,
+  endDemo
+} from "./demo.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -24,6 +30,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/auth/*", authHandler);
 
 app.get("/api/auth/me", authMe);
+
+// Demo temporal: estas rutas viven fuera del guard /api.
+app.post("/demo/start", startDemo);
+app.post("/demo/reset", resetDemo);
+app.post("/demo/end", endDemo);
 
 // Todo /api/* debajo de este punto requiere sesión.
 app.use("/api", requireAppUser);

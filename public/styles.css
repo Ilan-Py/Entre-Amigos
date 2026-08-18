@@ -2663,3 +2663,267 @@ main,
     grid-template-columns: 1fr 1fr;
   }
 }
+
+
+/* =========================================================
+   V13 — Demo pública
+   ========================================================= */
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+}
+
+.demo-login {
+  width: 100%;
+  min-height: 46px;
+  border-color: #b8d0cb;
+  background: var(--soft-primary);
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 780;
+}
+
+.demo-login:hover {
+  border-color: var(--primary);
+}
+
+.demo-login-note {
+  margin-top: 9px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.demo-banner {
+  position: sticky;
+  top: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px max(18px, calc((100vw - 1120px) / 2));
+  border-bottom: 1px solid #d7e5e2;
+  background: #f0f8f6;
+  color: #244a45;
+}
+
+.demo-banner[hidden] {
+  display: none !important;
+}
+
+.demo-banner b,
+.demo-banner span {
+  display: block;
+}
+
+.demo-banner b {
+  font-size: 12px;
+}
+
+.demo-banner span {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #57706c;
+}
+
+.demo-banner button {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  background: white;
+}
+
+/* =========================================================
+   Tema oscuro automático según dispositivo
+   ========================================================= */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111718;
+    --surface: #192123;
+    --surface-2: #20292b;
+    --ink: #edf2f1;
+    --muted: #9eaaa8;
+    --line: #303b3d;
+    --primary: #72b7ad;
+    --primary-hover: #86c6bd;
+    --soft-primary: #203330;
+    --success: #79c792;
+    --danger: #e28787;
+    --shadow: 0 8px 28px rgba(0,0,0,.22);
+  }
+
+  body {
+    color-scheme: dark;
+  }
+
+  .topbar {
+    background: #102b29;
+  }
+
+  .stat,
+  .card,
+  button,
+  input,
+  select,
+  textarea,
+  .loading-card,
+  .new-person-details,
+  .existing-person-highlight,
+  .auth-card,
+  .directory-filter,
+  .startup-error,
+  .startup-load-error,
+  .api-debug {
+    background: var(--surface);
+    color: var(--ink);
+    border-color: var(--line);
+  }
+
+  .tabs {
+    background: #20292b;
+  }
+
+  .tabs button.activo {
+    background: #2a3537;
+    color: var(--primary);
+  }
+
+  label {
+    color: #cbd3d2;
+  }
+
+  input,
+  select,
+  textarea {
+    border-color: #3a4749;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline-color: #426c66;
+  }
+
+  .person-option,
+  .person-option-primary,
+  .existing-person-highlight,
+  .onboarding-box,
+  .custom-check,
+  .compact-toggle,
+  .debt,
+  .overview-settled {
+    background: var(--surface-2);
+    border-color: var(--line);
+  }
+
+  .category-pill,
+  .movement-category {
+    background: #263a37;
+  }
+
+  .pending-positive,
+  .overview-positive {
+    color: #82cf99;
+  }
+
+  .pending-negative,
+  .overview-negative,
+  .danger-soft {
+    color: #e38a8a !important;
+  }
+
+  .danger-soft {
+    background: #342324 !important;
+    border-color: #604040 !important;
+  }
+
+  .demo-banner {
+    border-color: #34504b;
+    background: #182b28;
+    color: #d9eee9;
+  }
+
+  .demo-banner span {
+    color: #a9c3bd;
+  }
+
+  .demo-banner button {
+    background: #213734;
+    color: #e4efed;
+    border-color: #3a5853;
+  }
+
+  .auth-gate {
+    background:
+      radial-gradient(circle at 20% 15%, rgba(75,145,134,.13), transparent 34%),
+      linear-gradient(180deg, #101718 0%, #131c1d 100%);
+  }
+
+  .google-login {
+    background: #202829;
+    color: #eef2f1;
+    border-color: #3a4547;
+  }
+
+  .google-login:hover {
+    background: #273133;
+  }
+
+  .demo-login {
+    background: #203330;
+    border-color: #36564f;
+  }
+
+  .app-loading {
+    background: rgba(10,14,15,.84);
+  }
+
+  .spinner {
+    border-color: #31403f;
+    border-top-color: var(--primary);
+  }
+
+  .loading-value::after {
+    background:
+      linear-gradient(
+        90deg,
+        #242e30 20%,
+        #303b3d 40%,
+        #242e30 60%
+      );
+    background-size: 220% 100%;
+  }
+
+  .new-person-plus,
+  .person-option-icon {
+    color: #10211f;
+  }
+}
+
+@media(max-width:700px) {
+  .demo-banner {
+    position: relative;
+    padding: 10px 12px;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .demo-banner button {
+    width: 100%;
+  }
+}

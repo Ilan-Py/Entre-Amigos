@@ -1,6 +1,7 @@
 import { ExpressAuth, getSession } from "@auth/express";
 import Google from "@auth/express/providers/google";
 import db from "./db.js";
+import { getDemoUser } from "./demo.js";
 
 export const authConfig = {
   trustHost: true,
@@ -60,6 +61,7 @@ async function ensureAppUser(sessionUser) {
   const [[conteo]] = await db.query(`
     SELECT COUNT(*)::int AS total
     FROM usuarios
+    WHERE is_demo = FALSE
   `);
 
   if (Number(conteo.total) === 1) {
@@ -81,6 +83,28 @@ async function ensureAppUser(sessionUser) {
 
 export async function requireAppUser(req, res, next) {
   try {
+    const demoUser = await getDemoUser(req);
+
+    if (demoUser) {
+      req.session = {
+        user: {
+          email: demoUser.email,
+          name: demoUser.nombre
+        }
+      };
+
+      req.appUser = {
+        id: demoUser.id,
+        email: demoUser.email,
+        nombre: demoUser.nombre,
+        avatar: demoUser.avatar,
+        is_demo: true,
+        demo_expires_at: demoUser.demo_expires_at
+      };
+
+      return next();
+    }
+
     const session = await getAuthSession(req);
 
     if (!session?.user?.email) {
@@ -104,6 +128,22 @@ export async function requireAppUser(req, res, next) {
 
 export async function authMe(req, res) {
   try {
+    const demoUser = await getDemoUser(req);
+
+    if (demoUser) {
+      return res.json({
+        authenticated: true,
+        user: {
+          id: demoUser.id,
+          email: demoUser.email,
+          name: "Modo demo",
+          image: null,
+          isDemo: true,
+          expiresAt: demoUser.demo_expires_at
+        }
+      });
+    }
+
     const session = await getAuthSession(req);
 
     if (!session?.user?.email) {
@@ -120,7 +160,8 @@ export async function authMe(req, res) {
         id: usuario.id,
         email: usuario.email,
         name: usuario.nombre,
-        image: usuario.avatar
+        image: usuario.avatar,
+        isDemo: false
       }
     });
 

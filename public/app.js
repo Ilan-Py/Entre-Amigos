@@ -10,6 +10,8 @@ const $ = id => document.getElementById(id);
 
 let ultimoDiagnosticoApi = null;
 
+let usuarioActual = null;
+
 
 function modoDebugActivo() {
   const params = new URLSearchParams(window.location.search);
@@ -203,6 +205,10 @@ async function iniciarSesionGoogle() {
 }
 
 async function cerrarSesion() {
+  if (usuarioActual?.isDemo) {
+    return salirDemo();
+  }
+
   try {
     const csrfToken = await obtenerCsrfAuth();
 
@@ -229,19 +235,115 @@ async function cerrarSesion() {
   }
 }
 
+
+async function iniciarDemo() {
+  const boton = $("btnDemo");
+
+  try {
+    if (boton) {
+      boton.disabled = true;
+      boton.textContent = "Preparando demo...";
+    }
+
+    const r = await fetch("/demo/start", {
+      method: "POST",
+      credentials: "same-origin"
+    });
+
+    const data = await r.json();
+
+    if (!r.ok) {
+      throw new Error(
+        data.error || "No se pudo iniciar la demo."
+      );
+    }
+
+    localStorage.setItem("grupo_actual", "super");
+    window.location.href = "/";
+
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    if (boton) {
+      boton.disabled = false;
+      boton.textContent = "Probar demo";
+    }
+  }
+}
+
+async function restablecerDemo() {
+  if (!usuarioActual?.isDemo) return;
+
+  if (!confirm(
+    "¿Restablecer la demo?\n\n" +
+    "Se descartarán todos los cambios que hiciste en esta sesión."
+  )) {
+    return;
+  }
+
+  setLoading(
+    true,
+    "Restableciendo demo",
+    "Volviendo a cargar los datos de ejemplo..."
+  );
+
+  try {
+    const r = await fetch("/demo/reset", {
+      method: "POST",
+      credentials: "same-origin"
+    });
+
+    const data = await r.json();
+
+    if (!r.ok) {
+      throw new Error(
+        data.error || "No se pudo restablecer la demo."
+      );
+    }
+
+    localStorage.setItem("grupo_actual", "super");
+    window.location.reload();
+
+  } catch (e) {
+    alert(e.message);
+    setLoading(false);
+  }
+}
+
+async function salirDemo() {
+  try {
+    await fetch("/demo/end", {
+      method: "POST",
+      credentials: "same-origin"
+    });
+  } catch (_) {}
+
+  localStorage.removeItem("grupo_actual");
+  window.location.href = "/";
+}
+
 function mostrarSesion(user) {
+  usuarioActual = user;
+
   $("authGate").hidden = true;
   $("appAuthenticated").hidden = false;
 
   $("authUserName").textContent =
-    user.name || user.email || "Mi cuenta";
+    user.isDemo
+      ? "Modo demo"
+      : user.name || user.email || "Mi cuenta";
 
-  if (user.image) {
+  $("demoBanner").hidden = !user.isDemo;
+
+  if (user.image && !user.isDemo) {
     $("authUserAvatar").src = user.image;
     $("authUserAvatar").hidden = false;
   } else {
     $("authUserAvatar").hidden = true;
   }
+
+  $("btnLogout").textContent =
+    user.isDemo ? "Salir de demo" : "Salir";
 }
 
 function mostrarLogin() {
@@ -252,6 +354,16 @@ function mostrarLogin() {
 $("btnGoogleLogin")?.addEventListener(
   "click",
   iniciarSesionGoogle
+);
+
+$("btnDemo")?.addEventListener(
+  "click",
+  iniciarDemo
+);
+
+$("btnResetDemo")?.addEventListener(
+  "click",
+  restablecerDemo
 );
 
 $("btnLogout")?.addEventListener(

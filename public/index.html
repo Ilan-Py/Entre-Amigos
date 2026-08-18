@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <title>Entre Amigos</title>
-  <link rel="stylesheet" href="styles.css?v=12.0.9b">
+  <link rel="stylesheet" href="styles.css?v=13.0.0">
 </head>
 <body>
 <div id="authGate" class="auth-gate">
@@ -32,6 +32,16 @@
       Continuar con Google
     </button>
 
+    <div class="auth-divider"><span>o</span></div>
+
+    <button id="btnDemo" type="button" class="demo-login">
+      Probar demo
+    </button>
+
+    <div class="demo-login-note">
+      No requiere cuenta. Los cambios son temporales y privados para esta sesión.
+    </div>
+
     <div class="auth-note">
       Las personas que agregues a tus grupos no necesitan crear una cuenta.
     </div>
@@ -39,6 +49,18 @@
 </div>
 
 <div id="appAuthenticated" hidden>
+<div id="demoBanner" class="demo-banner" hidden>
+  <div>
+    <b>Modo demo</b>
+    <span>
+      Explorá libremente. Los cambios son temporales, privados y duran hasta 2 horas.
+    </span>
+  </div>
+
+  <button id="btnResetDemo" type="button">
+    Restablecer demo
+  </button>
+</div>
 
 <header class="topbar">
   <div class="wrap topbar-inner">
@@ -492,6 +514,6 @@
 
 <div id="toast"></div>
 
-<script src="app.js?v=12.0.9b"></script>
+<script src="app.js?v=13.0.0"></script>
 </body>
 </html>
